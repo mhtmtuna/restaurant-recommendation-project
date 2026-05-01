@@ -150,22 +150,37 @@ def click_review_tab(driver):
 
 
 def expand_reviews(driver, target_count):
-    for _ in range(10):
+    last_count = 0
+    stuck_rounds = 0
+
+    for _ in range(18):
         reviews = collect_review_texts(driver)
+        print(f"  collected visible reviews: {len(reviews)}")
         if len(reviews) >= target_count:
             return
+
         buttons = driver.find_elements(By.CSS_SELECTOR, "button, a")
         more = [
             button
             for button in buttons
             if button.is_displayed() and any(word in button.text for word in MORE_WORDS)
         ]
-        if not more:
-            return
-        try:
-            safe_click(driver, more[0])
-            time.sleep(0.8)
-        except Exception:
+        if more:
+            try:
+                safe_click(driver, more[0])
+            except Exception:
+                pass
+
+        driver.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 0.8));")
+        time.sleep(1.0)
+
+        if len(reviews) == last_count:
+            stuck_rounds += 1
+        else:
+            stuck_rounds = 0
+            last_count = len(reviews)
+
+        if stuck_rounds >= 4:
             return
 
 
@@ -173,6 +188,8 @@ def collect_review_texts(driver):
     selectors = [
         ".list_evaluation .txt_comment",
         ".list_review .desc_review",
+        "p[class*='txt_']",
+        "div[class*='comment'] p",
         "[class*='review'] [class*='txt']",
         "[class*='comment']",
     ]
@@ -189,9 +206,11 @@ def collect_review_texts(driver):
 
 
 def collect_place_reviews(driver, place, area, category, review_limit):
-    driver.get(place.url)
+    url = place.url.split("#")[0] + "#review"
+    driver.get(url)
     time.sleep(1.5)
-    click_review_tab(driver)
+    if "#review" not in driver.current_url:
+        click_review_tab(driver)
     expand_reviews(driver, review_limit)
     reviews = collect_review_texts(driver)[:review_limit]
 
