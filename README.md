@@ -34,6 +34,18 @@ feature 생성:
 python src/build_features.py
 ```
 
+모델 학습:
+
+```bash
+python src/train_model.py
+```
+
+추천 실행 예시:
+
+```bash
+python src/recommend.py --relation 연인 --occasion 식사 --area 강남
+```
+
 `data/raw_reviews.csv`가 있으면 실제 수집 데이터를 사용하고, 없으면 `data/raw_reviews_sample.csv`를 사용합니다.
 
 ## 핵심 아이디어
