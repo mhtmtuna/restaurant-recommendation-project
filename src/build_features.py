@@ -29,7 +29,8 @@ def sentiment_score(reviews, positive_words, negative_words):
     mentions = pos + neg
     if mentions == 0:
         return None, 0.0, 0
-    return pos / mentions, mentions / len(reviews), mentions
+    score = (pos + 1) / (mentions + 2)
+    return score, mentions / len(reviews), mentions
 
 
 def directional_score(reviews, high_words, low_words):
@@ -38,7 +39,14 @@ def directional_score(reviews, high_words, low_words):
     mentions = high + low
     if mentions == 0:
         return None, 0.0, 0
-    return high / mentions, mentions / len(reviews), mentions
+    score = (high + 1) / (mentions + 2)
+    return score, mentions / len(reviews), mentions
+
+
+def required_mentions(review_count):
+    if review_count < MIN_MENTIONS:
+        return 1
+    return MIN_MENTIONS
 
 
 def label_value(reviews, label_words):
@@ -123,26 +131,30 @@ def build_features(raw_rows, keywords):
             score, confidence, mentions = sentiment_score(
                 reviews, features[name]["positive"], features[name]["negative"]
             )
-            row[f"{name}_score"] = score if mentions >= MIN_MENTIONS else None
+            row[f"{name}_score"] = score if mentions >= required_mentions(len(reviews)) else None
             row[f"{name}_confidence"] = confidence
+            row[f"{name}_mentions"] = mentions
 
         brightness, confidence, mentions = directional_score(
             reviews, features["brightness"]["bright"], features["brightness"]["dark"]
         )
-        row["brightness_score"] = brightness if mentions >= MIN_MENTIONS else None
+        row["brightness_score"] = brightness if mentions >= required_mentions(len(reviews)) else None
         row["brightness_confidence"] = confidence
+        row["brightness_mentions"] = mentions
 
         noise, confidence, mentions = directional_score(
             reviews, features["noise"]["lively"], features["noise"]["quiet"]
         )
-        row["noise_score"] = noise if mentions >= MIN_MENTIONS else None
+        row["noise_score"] = noise if mentions >= required_mentions(len(reviews)) else None
         row["noise_confidence"] = confidence
+        row["noise_mentions"] = mentions
 
         spaciousness, confidence, mentions = directional_score(
             reviews, features["spaciousness"]["spacious"], features["spaciousness"]["cozy"]
         )
-        row["spaciousness_score"] = spaciousness if mentions >= MIN_MENTIONS else None
+        row["spaciousness_score"] = spaciousness if mentions >= required_mentions(len(reviews)) else None
         row["spaciousness_confidence"] = confidence
+        row["spaciousness_mentions"] = mentions
 
         seat_hits = []
         for seat, words in features["seat_type"].items():
