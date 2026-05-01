@@ -28,6 +28,8 @@ FIELDNAMES = [
     "review_text",
 ]
 
+MORE_WORDS = ["\ub354\ubcf4\uae30", "\ud6c4\uae30 \ub354\ubcf4\uae30", "\ub9ac\ubdf0 \ub354\ubcf4\uae30"]
+
 
 @dataclass
 class Place:
@@ -53,6 +55,15 @@ def make_driver(headless=False):
     return webdriver.Chrome(options=options)
 
 
+def safe_click(driver, element):
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    time.sleep(0.3)
+    try:
+        element.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", element)
+
+
 def text_or_empty(element, selectors):
     for selector in selectors:
         found = element.find_elements(By.CSS_SELECTOR, selector)
@@ -74,7 +85,7 @@ def extract_place_id(url):
 
 
 def search_places(driver, area, category, limit):
-    query = f"{area} {category} 맛집"
+    query = f"{area} {category} \ub9db\uc9d1"
     url = f"https://map.kakao.com/?q={quote_plus(query)}"
     driver.get(url)
     wait = WebDriverWait(driver, 12)
@@ -114,7 +125,7 @@ def search_places(driver, area, category, limit):
         clickable = [button for button in more_buttons if button.is_displayed()]
         if not clickable:
             break
-        clickable[0].click()
+        safe_click(driver, clickable[0])
         time.sleep(1.2)
 
     return places
@@ -131,7 +142,7 @@ def click_review_tab(driver):
         for button in buttons:
             if button.is_displayed():
                 try:
-                    button.click()
+                    safe_click(driver, button)
                     time.sleep(0.8)
                     return
                 except Exception:
@@ -147,12 +158,12 @@ def expand_reviews(driver, target_count):
         more = [
             button
             for button in buttons
-            if button.is_displayed() and any(word in button.text for word in ["더보기", "후기 더보기", "리뷰 더보기"])
+            if button.is_displayed() and any(word in button.text for word in MORE_WORDS)
         ]
         if not more:
             return
         try:
-            more[0].click()
+            safe_click(driver, more[0])
             time.sleep(0.8)
         except Exception:
             return
