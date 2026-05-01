@@ -208,12 +208,96 @@ def collect_review_texts(driver):
     return texts
 
 
+def extract_price(driver):
+    """Extract average price from the place info page.
+
+    Tries multiple selectors that Kakao Map uses for price/menu info.
+    Returns a price string (digits only) or empty string if not found.
+    """
+    price_selectors = [
+        ".info_price .txt_price",
+        "[class*='price'] [class*='txt']",
+        ".detail_price",
+        ".info_menu .price_menu",
+        "[class*='menu'] [class*='price']",
+        ".list_menu .price_menu",
+    ]
+    prices = []
+    for selector in price_selectors:
+        for element in driver.find_elements(By.CSS_SELECTOR, selector):
+            text = element.text.strip()
+            match = re.search(r"[\d,]+", text)
+            if match:
+                value = int(match.group(0).replace(",", ""))
+                if 1000 <= value <= 500000:
+                    prices.append(value)
+    if prices:
+        avg = sum(prices) // len(prices)
+        return str(avg)
+    return ""
+
+
+def extract_photo_ratio(driver):
+    """Estimate photo review ratio from visible review elements.
+
+    Counts review items that contain image elements vs total review items.
+    Returns a ratio string (0.0~1.0) or empty string if not calculable.
+    """
+    review_container_selectors = [
+        ".list_evaluation > li",
+        ".list_review > li",
+        "[class*='review_list'] > li",
+        "[class*='review'] > [class*='item']",
+    ]
+    total = 0
+    with_photo = 0
+    for selector in review_container_selectors:
+        items = driver.find_elements(By.CSS_SELECTOR, selector)
+        if not items:
+            continue
+        total = len(items)
+        for item in items:
+            photos = item.find_elements(By.CSS_SELECTOR, "img[src*='photo'], img[src*='img'], .photo_area img")
+            if photos:
+                with_photo += 1
+        break
+
+    if total >= 3:
+        ratio = round(with_photo / total, 2)
+        return str(ratio)
+    return ""
+
+
+def collect_place_info(driver, place_url):
+    """Navigate to the place info page and extract price and photo_ratio.
+
+    Visits the main info tab first, then the review tab.
+    Returns (price, photo_ratio) as strings.
+    """
+    info_url = place_url.split("#")[0]
+    driver.get(info_url)
+    time.sleep(1.5)
+
+    price = extract_price(driver)
+    if price:
+        print(f"  extracted price: {price}")
+
+    return price
+
+
 def collect_place_reviews(driver, place, area, category, review_limit):
+    price = collect_place_info(driver, place.url)
+
     url = place.url.split("#")[0] + "#review"
     driver.get(url)
     time.sleep(1.5)
     if "#review" not in driver.current_url:
         click_review_tab(driver)
+
+    photo_ratio = extract_photo_ratio(driver)
+    if photo_ratio:
+        print(f"  extracted photo_ratio: {photo_ratio}")
+
     expand_reviews(driver, review_limit)
     reviews = collect_review_texts(driver)[:review_limit]
 
@@ -230,8 +314,8 @@ def collect_place_reviews(driver, place, area, category, review_limit):
                 "category": category,
                 "rating": place.rating,
                 "review_count": place.review_count,
-                "price": "",
-                "photo_ratio": "",
+                "price": price,
+                "photo_ratio": photo_ratio,
                 "review_text": review,
             }
         )

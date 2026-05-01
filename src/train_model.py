@@ -2,12 +2,13 @@ import json
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MultiLabelBinarizer, OneHotEncoder
@@ -53,6 +54,8 @@ NUMERIC_FEATURES = [
 ]
 
 CATEGORICAL_FEATURES = ["area", "category"]
+
+N_FOLDS = 5
 
 
 def read_features():
@@ -102,19 +105,50 @@ def make_pipeline(seat_columns):
     )
 
 
-def probability_frame(model, x_data):
-    probabilities = model.predict_proba(x_data)
-    return pd.DataFrame(probabilities, columns=[f"{label}_score" for label in LABEL_COLUMNS])
+def out_of_fold_predictions(x_data, y_data, seat_columns):
+    """Generate out-of-fold predictions using K-Fold cross validation.
+
+    Each restaurant's score comes from a model that did NOT see that
+    restaurant during training, eliminating data leakage.
+
+    Returns:
+        oof_scores: np.ndarray of shape (n_samples, n_labels)
+        oof_preds: np.ndarray of shape (n_samples, n_labels) for report
+    """
+    n_samples = len(x_data)
+    n_labels = len(LABEL_COLUMNS)
+    oof_scores = np.zeros((n_samples, n_labels))
+    oof_preds = np.zeros((n_samples, n_labels), dtype=int)
+
+    kf = KFold(n_splits=N_FOLDS, shuffle=True, random_state=42)
+
+    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(x_data), start=1):
+        print(f"  fold {fold_idx}/{N_FOLDS}: train={len(train_idx)}, val={len(val_idx)}")
+
+        fold_model = make_pipeline(seat_columns)
+        fold_model.fit(x_data.iloc[train_idx], y_data.iloc[train_idx])
+
+        oof_scores[val_idx] = fold_model.predict_proba(x_data.iloc[val_idx])
+        oof_preds[val_idx] = fold_model.predict(x_data.iloc[val_idx])
+
+    return oof_scores, oof_preds
 
 
-def build_report(y_true, y_pred, train_size, test_size):
-    return {
-        "train_size": train_size,
-        "test_size": test_size,
+def build_report(y_true, y_pred, total_size):
+    per_label = {}
+    for i, label in enumerate(LABEL_COLUMNS):
+        positive_count = int(y_true.iloc[:, i].sum())
+        per_label[label] = {"positive_samples": positive_count}
+
+    report = {
+        "total_size": total_size,
+        "n_folds": N_FOLDS,
+        "method": "out-of-fold K-Fold cross validation (no data leakage)",
         "labels": LABEL_COLUMNS,
+        "label_distribution": per_label,
         "warning": (
             "Dataset is very small, so these metrics are only a smoke test."
-            if train_size + test_size < 100
+            if total_size < 100
             else ""
         ),
         "classification_report": classification_report(
@@ -125,6 +159,7 @@ def build_report(y_true, y_pred, train_size, test_size):
             output_dict=True,
         ),
     }
+    return report
 
 
 def main():
@@ -137,19 +172,18 @@ def main():
     if len(data) < 10:
         raise ValueError("Need at least 10 restaurants to train a baseline model.")
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        x_data,
-        y_data,
-        test_size=0.25,
-        random_state=42,
-    )
+    print(f"dataset: {len(data)} restaurants")
+    print(f"label distribution:")
+    for label in LABEL_COLUMNS:
+        pos = int(y_data[label].sum())
+        print(f"  {label}: {pos} positive ({pos / len(data) * 100:.1f}%)")
 
-    eval_model = make_pipeline(seat_columns)
-    eval_model.fit(x_train, y_train)
+    print(f"\ngenerating out-of-fold predictions ({N_FOLDS}-fold)...")
+    oof_scores, oof_preds = out_of_fold_predictions(x_data, y_data, seat_columns)
 
-    y_pred = eval_model.predict(x_test)
-    report = build_report(y_test, y_pred, len(x_train), len(x_test))
+    report = build_report(y_data, oof_preds, len(data))
 
+    print("\ntraining final model on all data...")
     model = make_pipeline(seat_columns)
     model.fit(x_data, y_data)
 
@@ -168,21 +202,34 @@ def main():
     with REPORT_PATH.open("w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
-    scores = probability_frame(model, x_data)
+    scores_df = pd.DataFrame(oof_scores, columns=[f"{label}_score" for label in LABEL_COLUMNS])
     output = pd.concat(
         [
-            data[["restaurant_id", "restaurant_name", "area", "category", "rating", "review_count"]],
-            scores,
+            data[["restaurant_id", "restaurant_name", "area", "category", "rating", "review_count"]].reset_index(drop=True),
+            scores_df,
         ],
         axis=1,
     )
     output.to_csv(PREDICTIONS_PATH, index=False, encoding="utf-8-sig")
 
-    print(f"saved model: {MODEL_PATH}")
+    print(f"\nsaved model: {MODEL_PATH}")
     print(f"saved report: {REPORT_PATH}")
     print(f"saved scores: {PREDICTIONS_PATH}")
+
+    print("\n--- classification report (out-of-fold) ---")
+    cr = report["classification_report"]
+    for label in LABEL_COLUMNS:
+        metrics = cr[label]
+        dist = report["label_distribution"][label]
+        print(
+            f"  {label:20s}  "
+            f"P={metrics['precision']:.2f}  R={metrics['recall']:.2f}  "
+            f"F1={metrics['f1-score']:.2f}  "
+            f"(positive={dist['positive_samples']})"
+        )
+
     if report["warning"]:
-        print(f"warning: {report['warning']}")
+        print(f"\nwarning: {report['warning']}")
 
 
 if __name__ == "__main__":

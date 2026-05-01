@@ -466,11 +466,19 @@ HTML = r"""
     }
 
     function parsePartySize(text) {
-      const totalMatch = text.match(/총\s*(\d+)\s*명/);
-      if (totalMatch) return Number(totalMatch[1]);
+  const totalMatch = text.match(/총\s*(\d+)\s*명/);
+  if (totalMatch) return Number(totalMatch[1]);
 
-      const numberMatches = [...text.matchAll(/(\d+)\s*명/g)].map((m) => Number(m[1]));
-      if (numberMatches.length > 0) return Math.max(...numberMatches);
+  // "남자 2에 여자 3명" 같은 패턴: 숫자들을 합산
+  const genderPattern = text.match(/남자\s*(\d+).*여자\s*(\d+)|여자\s*(\d+).*남자\s*(\d+)/);
+  if (genderPattern) {
+    const nums = genderPattern.slice(1).filter(Boolean).map(Number);
+    return nums.reduce((a, b) => a + b, 0);
+  }
+
+  const numberMatches = [...text.matchAll(/(\d+)\s*명/g)].map((m) => Number(m[1]));
+  if (numberMatches.length > 1) return numberMatches.reduce((a, b) => a + b, 0);
+  if (numberMatches.length === 1) return numberMatches[0];
 
       const wordNumbers = [
         ["둘", 2], ["두 명", 2], ["셋", 3], ["세 명", 3],
@@ -528,9 +536,16 @@ HTML = r"""
       else if (includesAny(text, ["분위기", "감성", "무드", "예쁜"])) parsed.priority = "분위기";
 
       const genderText = text.replaceAll("남자친구", "").replaceAll("여자친구", "");
-      const hasMale = genderText.includes("남자");
-      const hasFemale = genderText.includes("여자");
-      if (hasMale && hasFemale) parsed.genderMix = "반반";
+      const maleMatch = genderText.match(/남자\s*(\d+)/);
+      const femaleMatch = genderText.match(/여자\s*(\d+)/);
+      if (maleMatch && femaleMatch) {
+        const m = Number(maleMatch[1]);
+        const f = Number(femaleMatch[1]);
+        if (m > f) parsed.genderMix = "남자 위주";
+        else if (f > m) parsed.genderMix = "여자 위주";
+        else parsed.genderMix = "반반";
+      } else if (hasMale) parsed.genderMix = "남자 위주";
+      else if (hasFemale) parsed.genderMix = "여자 위주";
       else if (hasMale) parsed.genderMix = "남자 위주";
       else if (hasFemale) parsed.genderMix = "여자 위주";
 
