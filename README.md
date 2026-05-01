@@ -19,32 +19,40 @@ raw review data -> keyword tagging -> feature/confidence calculation -> label ge
 필요 패키지 설치:
 
 ```bash
-pip install -r requirements.txt
+py -m pip install -r requirements.txt
 ```
 
 카카오맵 리뷰 수집:
 
 ```bash
-python src/crawl_kakao.py
+py src/crawl_kakao.py
 ```
 
 feature 생성:
 
 ```bash
-python src/build_features.py
+py src/build_features.py
 ```
 
 모델 학습:
 
 ```bash
-python src/train_model.py
+py src/train_model.py
 ```
 
 추천 실행 예시:
 
 ```bash
-python src/recommend.py --relation 연인 --occasion 식사 --area 강남
+py src/recommend.py --relation 연인 --occasion 식사 --area 강남
 ```
+
+웹 UI 실행:
+
+```bash
+py src/web_app.py
+```
+
+브라우저에서 `http://127.0.0.1:8000`을 열면 자연어 입력과 선택형 입력을 같이 사용할 수 있습니다.
 
 `data/raw_reviews.csv`가 있으면 실제 수집 데이터를 사용하고, 없으면 `data/raw_reviews_sample.csv`를 사용합니다.
 
