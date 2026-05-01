@@ -1,6 +1,6 @@
 {
-  "train_size": 21,
-  "test_size": 8,
+  "train_size": 260,
+  "test_size": 87,
   "labels": [
     "couple_meal",
     "couple_drink",
@@ -9,67 +9,67 @@
     "business_meal",
     "business_drink"
   ],
-  "warning": "Dataset is very small, so these metrics are only a smoke test.",
+  "warning": "",
   "classification_report": {
     "couple_meal": {
-      "precision": 0.6666666666666666,
+      "precision": 0.9210526315789473,
       "recall": 1.0,
-      "f1-score": 0.8,
-      "support": 2.0
+      "f1-score": 0.958904109589041,
+      "support": 35.0
     },
     "couple_drink": {
-      "precision": 0.5,
-      "recall": 0.4,
-      "f1-score": 0.4444444444444444,
-      "support": 5.0
+      "precision": 0.8028169014084507,
+      "recall": 0.9344262295081968,
+      "f1-score": 0.8636363636363636,
+      "support": 61.0
     },
     "friend_meal": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 1.0
+      "precision": 0.75,
+      "recall": 0.2727272727272727,
+      "f1-score": 0.4,
+      "support": 11.0
     },
     "friend_drink": {
       "precision": 0.0,
       "recall": 0.0,
       "f1-score": 0.0,
-      "support": 2.0
+      "support": 5.0
     },
     "business_meal": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 1.0
+      "precision": 0.6666666666666666,
+      "recall": 0.46153846153846156,
+      "f1-score": 0.5454545454545454,
+      "support": 13.0
     },
     "business_drink": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 1.0
+      "precision": 0.875,
+      "recall": 0.7,
+      "f1-score": 0.7777777777777778,
+      "support": 10.0
     },
     "micro avg": {
-      "precision": 0.4444444444444444,
-      "recall": 0.3333333333333333,
-      "f1-score": 0.38095238095238093,
-      "support": 12.0
+      "precision": 0.8307692307692308,
+      "recall": 0.8,
+      "f1-score": 0.8150943396226416,
+      "support": 135.0
     },
     "macro avg": {
-      "precision": 0.19444444444444442,
-      "recall": 0.2333333333333333,
-      "f1-score": 0.2074074074074074,
-      "support": 12.0
+      "precision": 0.6692560332756775,
+      "recall": 0.5614486606289885,
+      "f1-score": 0.5909621327429546,
+      "support": 135.0
     },
     "weighted avg": {
-      "precision": 0.3194444444444444,
-      "recall": 0.3333333333333333,
-      "f1-score": 0.31851851851851853,
-      "support": 12.0
+      "precision": 0.7916691833914469,
+      "recall": 0.8,
+      "f1-score": 0.7815714732305294,
+      "support": 135.0
     },
     "samples avg": {
-      "precision": 0.20833333333333331,
-      "recall": 0.125,
-      "f1-score": 0.15476190476190477,
-      "support": 12.0
+      "precision": 0.6310344827586206,
+      "recall": 0.5704980842911876,
+      "f1-score": 0.5888615216201423,
+      "support": 135.0
     }
   }
 }

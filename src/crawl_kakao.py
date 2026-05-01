@@ -15,6 +15,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN_PATH = ROOT / "config" / "sampling_plan.json"
+ERRORS_PATH = ROOT / "data" / "crawl_errors.csv"
+STATUS_PATH = ROOT / "data" / "crawl_status.csv"
 
 FIELDNAMES = [
     "restaurant_id",
@@ -26,6 +28,17 @@ FIELDNAMES = [
     "price",
     "photo_ratio",
     "review_text",
+]
+
+ERROR_FIELDNAMES = ["area", "category", "restaurant_id", "restaurant_name", "stage", "error"]
+STATUS_FIELDNAMES = [
+    "area",
+    "category",
+    "restaurant_id",
+    "restaurant_name",
+    "status",
+    "collected_count",
+    "target_count",
 ]
 
 MORE_WORDS = ["\ub354\ubcf4\uae30", "\ud6c4\uae30 \ub354\ubcf4\uae30", "\ub9ac\ubdf0 \ub354\ubcf4\uae30"]
@@ -153,26 +166,12 @@ def expand_reviews(driver, target_count):
     last_count = 0
     stuck_rounds = 0
 
-    for _ in range(18):
+    for _ in range(10):
         reviews = collect_review_texts(driver)
         print(f"  collected visible reviews: {len(reviews)}")
         if len(reviews) >= target_count:
+            print(f"  reached target reviews: {len(reviews)}")
             return
-
-        buttons = driver.find_elements(By.CSS_SELECTOR, "button, a")
-        more = [
-            button
-            for button in buttons
-            if button.is_displayed() and any(word in button.text for word in MORE_WORDS)
-        ]
-        if more:
-            try:
-                safe_click(driver, more[0])
-            except Exception:
-                pass
-
-        driver.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 0.8));")
-        time.sleep(1.0)
 
         if len(reviews) == last_count:
             stuck_rounds += 1
@@ -180,8 +179,12 @@ def expand_reviews(driver, target_count):
             stuck_rounds = 0
             last_count = len(reviews)
 
-        if stuck_rounds >= 4:
+        if stuck_rounds >= 2:
+            print(f"  no more reviews loaded; moving on with {len(reviews)} reviews")
             return
+
+        driver.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 1.2));")
+        time.sleep(0.7)
 
 
 def collect_review_texts(driver):
@@ -245,6 +248,45 @@ def write_rows(path, rows):
     temp_path.replace(path)
 
 
+def append_error(row):
+    ERRORS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    exists = ERRORS_PATH.exists()
+    with ERRORS_PATH.open("a", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=ERROR_FIELDNAMES)
+        if not exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def read_statuses():
+    if not STATUS_PATH.exists():
+        return {}
+    with STATUS_PATH.open("r", encoding="utf-8-sig", newline="") as f:
+        return {row["restaurant_id"]: row for row in csv.DictReader(f) if row.get("restaurant_id")}
+
+
+def write_statuses(statuses):
+    STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = STATUS_PATH.with_suffix(STATUS_PATH.suffix + ".tmp")
+    with temp_path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=STATUS_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(statuses.values())
+    temp_path.replace(STATUS_PATH)
+
+
+def status_for_count(collected_count, target_count):
+    if collected_count >= target_count:
+        return "completed"
+    if collected_count > 0:
+        return "partial"
+    return "no_reviews"
+
+
+def is_finished_status(status):
+    return status in {"completed", "partial", "no_reviews"}
+
+
 def read_existing_rows(path):
     if not path.exists():
         return []
@@ -277,26 +319,77 @@ def main():
     plan = load_plan()
     output_path = ROOT / plan["output_path"]
     all_rows = dedupe_rows(read_existing_rows(output_path))
+    statuses = read_statuses()
     if all_rows:
         print(f"[resume] loaded {len(all_rows)} existing reviews from {output_path}")
+    if statuses:
+        print(f"[resume] loaded {len(statuses)} crawl statuses from {STATUS_PATH}")
 
     driver = make_driver(headless=False)
     try:
         for area in plan["areas"]:
             for category in plan["categories"]:
                 print(f"[search] {area} / {category}")
-                places = search_places(driver, area, category, plan["restaurants_per_group"])
+                try:
+                    places = search_places(driver, area, category, plan["restaurants_per_group"])
+                except Exception as error:
+                    print(f"[error] search failed: {area} / {category} / {error}")
+                    append_error(
+                        {
+                            "area": area,
+                            "category": category,
+                            "restaurant_id": "",
+                            "restaurant_name": "",
+                            "stage": "search",
+                            "error": repr(error),
+                        }
+                    )
+                    continue
+
                 print(f"[found] {len(places)} places")
                 for idx, place in enumerate(places, start=1):
                     existing_counts = review_counts_by_restaurant(all_rows)
-                    if existing_counts.get(place.place_id, 0) >= plan["reviews_per_restaurant"]:
-                        print(f"[skip] {area} {category} {idx}/{len(places)} {place.name} already collected")
+                    previous_status = statuses.get(place.place_id, {}).get("status", "")
+                    if (
+                        existing_counts.get(place.place_id, 0) >= plan["reviews_per_restaurant"]
+                        or is_finished_status(previous_status)
+                    ):
+                        print(
+                            f"[skip] {area} {category} {idx}/{len(places)} "
+                            f"{place.name} already tried ({previous_status or existing_counts.get(place.place_id, 0)})"
+                        )
                         continue
 
                     print(f"[reviews] {area} {category} {idx}/{len(places)} {place.name}")
-                    rows = collect_place_reviews(driver, place, area, category, plan["reviews_per_restaurant"])
+                    try:
+                        rows = collect_place_reviews(driver, place, area, category, plan["reviews_per_restaurant"])
+                    except Exception as error:
+                        print(f"[error] reviews failed: {place.name} / {error}")
+                        append_error(
+                            {
+                                "area": area,
+                                "category": category,
+                                "restaurant_id": place.place_id,
+                                "restaurant_name": place.name,
+                                "stage": "reviews",
+                                "error": repr(error),
+                            }
+                        )
+                        continue
+
                     all_rows = dedupe_rows(all_rows + rows)
                     write_rows(output_path, all_rows)
+                    collected_count = review_counts_by_restaurant(all_rows).get(place.place_id, 0)
+                    statuses[place.place_id] = {
+                        "area": area,
+                        "category": category,
+                        "restaurant_id": place.place_id,
+                        "restaurant_name": place.name,
+                        "status": status_for_count(collected_count, plan["reviews_per_restaurant"]),
+                        "collected_count": collected_count,
+                        "target_count": plan["reviews_per_restaurant"],
+                    }
+                    write_statuses(statuses)
                     time.sleep(1.0)
     finally:
         driver.quit()

@@ -1,7 +1,7 @@
 {
   "areas": ["강남", "건대", "잠실"],
   "categories": ["한식", "일식", "중식", "양식", "카페 디저트", "주점 바"],
-  "restaurants_per_group": 2,
-  "reviews_per_restaurant": 5,
+  "restaurants_per_group": 25,
+  "reviews_per_restaurant": 50,
   "output_path": "data/raw_reviews.csv"
 }
