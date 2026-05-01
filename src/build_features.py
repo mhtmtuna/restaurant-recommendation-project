@@ -5,7 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KEYWORDS_PATH = ROOT / "config" / "keywords.json"
-RAW_PATH = ROOT / "data" / "raw_reviews_sample.csv"
+RAW_PATH = ROOT / "data" / "raw_reviews.csv"
+SAMPLE_RAW_PATH = ROOT / "data" / "raw_reviews_sample.csv"
 OUT_PATH = ROOT / "data" / "restaurants_features.csv"
 
 MIN_MENTIONS = 10
@@ -46,7 +47,8 @@ def label_value(reviews, label_words):
 
 
 def read_raw_reviews():
-    with RAW_PATH.open("r", encoding="utf-8-sig", newline="") as f:
+    path = RAW_PATH if RAW_PATH.exists() else SAMPLE_RAW_PATH
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
         return list(csv.DictReader(f))
 
 
