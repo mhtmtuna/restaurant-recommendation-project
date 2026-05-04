@@ -4,9 +4,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+import joblib
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parents[1]
 SCORES_PATH = ROOT / "data" / "restaurant_label_scores.csv"
 FEATURES_PATH = ROOT / "data" / "restaurants_features.csv"
+MODEL_PATH = ROOT / "models" / "restaurant_recommender.joblib"
+
+LABEL_COLUMNS_LIST = [
+    "couple_meal",
+    "couple_drink",
+    "friend_meal",
+    "friend_drink",
+    "business_meal",
+    "business_drink",
+]
 
 LABEL_COLUMNS = {
     "연인_식사": "couple_meal_score",
@@ -32,29 +45,107 @@ def to_float(value, default=0.0):
         return default
 
 
-def load_restaurants():
-    scores = read_csv(SCORES_PATH)
-    features = {row["restaurant_id"]: row for row in read_csv(FEATURES_PATH)}
-    restaurants = []
+def load_model_bundle():
+    """Load the trained model bundle from joblib.
 
-    for row in scores:
-        feature = features.get(row["restaurant_id"], {})
+    Returns the bundle dict or None if the model file does not exist.
+    """
+    if not MODEL_PATH.exists():
+        print(f"[warn] model not found: {MODEL_PATH}, falling back to CSV scores")
+        return None
+    try:
+        bundle = joblib.load(MODEL_PATH)
+        print(f"[model] loaded: {MODEL_PATH}")
+        return bundle
+    except Exception as e:
+        print(f"[warn] model load failed: {e}, falling back to CSV scores")
+        return None
+
+
+def predict_scores_from_model(bundle, features_data):
+    """Use the trained model to predict label probabilities for all restaurants.
+
+    Returns a dict: restaurant_id -> {label_score: float, ...}
+    """
+    model = bundle["model"]
+    numeric_features = bundle["numeric_features"]
+    categorical_features = bundle["categorical_features"]
+    seat_columns = bundle["seat_columns"]
+
+    data = features_data.copy()
+    for col in numeric_features:
+        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
+    for col in categorical_features:
+        data[col] = data[col].fillna("")
+
+    from sklearn.preprocessing import MultiLabelBinarizer
+    seat_labels = data["seat_type"].apply(
+        lambda v: [item for item in str(v).split(",") if item]
+    )
+    encoder = MultiLabelBinarizer(classes=[c.replace("seat_", "") for c in seat_columns])
+    encoded = encoder.fit_transform(seat_labels)
+    encoded_df = pd.DataFrame(encoded, columns=seat_columns, index=data.index)
+    data = pd.concat([data, encoded_df], axis=1)
+
+    x_data = data[numeric_features + categorical_features + seat_columns]
+    probabilities = model.predict_proba(x_data)
+
+    scores = {}
+    for i, row in data.iterrows():
+        rid = row["restaurant_id"]
+        scores[rid] = {}
+        for j, label in enumerate(LABEL_COLUMNS_LIST):
+            scores[rid][f"{label}_score"] = float(probabilities[i][j])
+
+    return scores
+
+
+def load_restaurants():
+    features_rows = read_csv(FEATURES_PATH)
+    features_map = {row["restaurant_id"]: row for row in features_rows}
+
+    model_bundle = load_model_bundle()
+
+    if model_bundle is not None:
+        features_df = pd.read_csv(FEATURES_PATH)
+        model_scores = predict_scores_from_model(model_bundle, features_df)
+        print(f"[model] predicted scores for {len(model_scores)} restaurants")
+    else:
+        model_scores = None
+        score_rows = read_csv(SCORES_PATH)
+        csv_scores = {row["restaurant_id"]: row for row in score_rows}
+
+    restaurants = []
+    for rid, feature in features_map.items():
         item = {
-            "restaurant_id": row["restaurant_id"],
-            "restaurant_name": row["restaurant_name"],
-            "area": row["area"],
-            "category": row["category"],
-            "rating": to_float(row.get("rating")),
-            "review_count": int(to_float(row.get("review_count"))),
+            "restaurant_id": rid,
+            "restaurant_name": feature.get("restaurant_name", ""),
+            "area": feature.get("area", ""),
+            "category": feature.get("category", ""),
+            "rating": to_float(feature.get("rating")),
+            "review_count": int(to_float(feature.get("review_count"))),
+            "price": to_float(feature.get("price")),
+            "photo_ratio": to_float(feature.get("photo_ratio")),
             "seat_type": feature.get("seat_type", ""),
             "taste_score": to_float(feature.get("taste_score")),
             "value_score": to_float(feature.get("value_score")),
+            "portion_score": to_float(feature.get("portion_score")),
             "noise_score": to_float(feature.get("noise_score"), 0.5),
             "spaciousness_score": to_float(feature.get("spaciousness_score"), 0.5),
+            "brightness_score": to_float(feature.get("brightness_score"), 0.5),
             "collected_review_count": int(to_float(feature.get("collected_review_count"))),
         }
-        for label, column in LABEL_COLUMNS.items():
-            item[column] = to_float(row.get(column))
+
+        if model_scores is not None and rid in model_scores:
+            for label, column in LABEL_COLUMNS.items():
+                item[column] = model_scores[rid].get(column, 0.0)
+        elif model_scores is None and rid in csv_scores:
+            for label, column in LABEL_COLUMNS.items():
+                item[column] = to_float(csv_scores[rid].get(column))
+        else:
+            for label, column in LABEL_COLUMNS.items():
+                item[column] = 0.0
+
         restaurants.append(item)
 
     return restaurants
@@ -155,6 +246,13 @@ HTML = r"""
       color: var(--muted);
       font-size: 14px;
       margin-bottom: 18px;
+    }
+
+    .warning {
+      color: var(--warm);
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
     }
 
     textarea {
@@ -357,6 +455,7 @@ HTML = r"""
       </div>
 
       <div class="chips" id="parsedChips"></div>
+      <div class="warning" id="parseWarning"></div>
 
       <div class="row">
         <div>
@@ -465,24 +564,36 @@ HTML = r"""
       return words.some((word) => text.includes(word));
     }
 
+    /* ── #7 fix: parsePartySize ── */
     function parsePartySize(text) {
-  const totalMatch = text.match(/총\s*(\d+)\s*명/);
-  if (totalMatch) return Number(totalMatch[1]);
+      const totalMatch = text.match(/총\s*(\d+)\s*명/);
+      if (totalMatch) return Number(totalMatch[1]);
 
-  // "남자 2에 여자 3명" 같은 패턴: 숫자들을 합산
-  const genderPattern = text.match(/남자\s*(\d+).*여자\s*(\d+)|여자\s*(\d+).*남자\s*(\d+)/);
-  if (genderPattern) {
-    const nums = genderPattern.slice(1).filter(Boolean).map(Number);
-    return nums.reduce((a, b) => a + b, 0);
-  }
+      const totalMatch2 = text.match(/총\s*(\d+)\s*인/);
+      if (totalMatch2) return Number(totalMatch2[1]);
 
-  const numberMatches = [...text.matchAll(/(\d+)\s*명/g)].map((m) => Number(m[1]));
-  if (numberMatches.length > 1) return numberMatches.reduce((a, b) => a + b, 0);
-  if (numberMatches.length === 1) return numberMatches[0];
+      const genderPattern = text.match(
+        /남자\s*(\d+)\s*(?:명)?.*여자\s*(\d+)\s*(?:명)?|여자\s*(\d+)\s*(?:명)?.*남자\s*(\d+)\s*(?:명)?/
+      );
+      if (genderPattern) {
+        const nums = genderPattern.slice(1).filter(Boolean).map(Number);
+        return nums.reduce((a, b) => a + b, 0);
+      }
+
+      const numberMatches = [...text.matchAll(/(\d+)\s*명/g)].map((m) => Number(m[1]));
+      if (numberMatches.length > 1) return numberMatches.reduce((a, b) => a + b, 0);
+      if (numberMatches.length === 1) return numberMatches[0];
+
+      const personMatches = [...text.matchAll(/(\d+)\s*인/g)].map((m) => Number(m[1]));
+      if (personMatches.length === 1) return personMatches[0];
 
       const wordNumbers = [
-        ["둘", 2], ["두 명", 2], ["셋", 3], ["세 명", 3],
-        ["넷", 4], ["네 명", 4], ["다섯", 5], ["여섯", 6],
+        ["둘", 2], ["두 명", 2], ["둘이", 2],
+        ["셋", 3], ["세 명", 3], ["셋이", 3],
+        ["넷", 4], ["네 명", 4], ["넷이", 4],
+        ["다섯", 5], ["다섯 명", 5],
+        ["여섯", 6], ["여섯 명", 6],
+        ["일곱", 7], ["여덟", 8], ["아홉", 9], ["열", 10],
       ];
       for (const [word, number] of wordNumbers) {
         if (text.includes(word)) return number;
@@ -490,51 +601,83 @@ HTML = r"""
       return null;
     }
 
+    /* ── #9 fix: parseTime ── */
+    function parseTime(text) {
+      const match = text.match(/(아침|점심|저녁|밤|새벽)/);
+      if (match) return match[1];
+
+      const hourMatch = text.match(/(\d{1,2})\s*시/);
+      if (hourMatch) {
+        const hour = Number(hourMatch[1]);
+        if (hour >= 5 && hour < 11) return "아침";
+        if (hour >= 11 && hour < 15) return "점심";
+        if (hour >= 15 && hour < 18) return "저녁";
+        if (hour >= 18 && hour < 22) return "저녁";
+        return "밤";
+      }
+      return null;
+    }
+
     function parseNatural(text) {
       const parsed = {};
+      const warnings = [];
 
+      /* 지역 (#9: 미입력 경고 추가) */
       if (text.includes("강남")) parsed.area = "강남";
-      if (text.includes("건대")) parsed.area = "건대";
-      if (text.includes("잠실")) parsed.area = "잠실";
+      else if (text.includes("건대")) parsed.area = "건대";
+      else if (text.includes("잠실")) parsed.area = "잠실";
+      else {
+        warnings.push("지역이 인식되지 않았어요. 기본값(강남)이 적용됩니다.");
+      }
 
+      /* 관계 */
       let romanticMentioned = false;
       if (includesAny(text, ["여자친구", "남자친구", "연인", "데이트", "애인"])) {
         parsed.relation = "연인";
         parsed.partySize = 2;
         romanticMentioned = true;
-      } else if (includesAny(text, ["회사", "상사", "팀장", "미팅", "비즈니스", "회식", "거래처"])) {
+      } else if (includesAny(text, ["회사", "상사", "팀장", "미팅", "비즈니스", "회식", "거래처", "직장"])) {
         parsed.relation = "비즈니스";
-      } else if (includesAny(text, ["친구", "친한친구", "동기", "애들", "친구들"])) {
+      } else if (includesAny(text, ["친구", "친한친구", "동기", "애들", "친구들", "동창"])) {
         parsed.relation = "친구";
       }
 
-      if (includesAny(text, ["술", "한잔", "맥주", "소주", "와인", "칵테일", "2차"])) {
+      /* 상황 (#9: "괜찮은 데", "좋은 데" 등 추가) */
+      if (includesAny(text, ["술", "한잔", "맥주", "소주", "와인", "칵테일", "2차", "소맥", "포차", "치맥"])) {
         parsed.occasion = "술자리";
-      } else if (includesAny(text, ["밥", "식사", "저녁", "점심", "먹", "식당", "맛집"])) {
+      } else if (includesAny(text, [
+        "밥", "식사", "저녁", "점심", "먹", "식당", "맛집", "아침",
+        "브런치", "런치", "디너", "괜찮은 데", "좋은 데", "갈만한 데",
+        "먹을 데", "먹을만한", "추천해"
+      ])) {
         parsed.occasion = "식사";
       }
 
+      /* 인원 (#7: 합산 로직 적용) */
       const partySize = parsePartySize(text);
       if (partySize && !romanticMentioned) parsed.partySize = partySize;
 
-      if (includesAny(text, ["한식", "국밥", "고기", "삼겹살", "곱창", "찌개", "해장"])) {
+      /* 음식 종류 (#9: 키워드 확장) */
+      if (includesAny(text, ["한식", "국밥", "고기", "삼겹살", "곱창", "찌개", "해장", "불고기", "갈비", "백반", "냉면", "비빔밥"])) {
         parsed.category = "한식";
-      } else if (includesAny(text, ["일식", "초밥", "스시", "라멘", "이자카야", "사시미", "오마카세"])) {
+      } else if (includesAny(text, ["일식", "초밥", "스시", "라멘", "이자카야", "사시미", "오마카세", "우동", "돈카츠", "카츠"])) {
         parsed.category = "일식";
-      } else if (includesAny(text, ["중식", "짜장", "짬뽕", "마라", "훠궈", "양꼬치", "탕수육"])) {
+      } else if (includesAny(text, ["중식", "짜장", "짬뽕", "마라", "훠궈", "양꼬치", "탕수육", "중국집"])) {
         parsed.category = "중식";
-      } else if (includesAny(text, ["양식", "파스타", "스테이크", "피자", "브런치", "버거"])) {
+      } else if (includesAny(text, ["양식", "파스타", "스테이크", "피자", "브런치", "버거", "리조또", "오믈렛"])) {
         parsed.category = "양식";
-      } else if (includesAny(text, ["카페", "디저트", "커피", "케이크", "빙수", "베이커리"])) {
+      } else if (includesAny(text, ["카페", "디저트", "커피", "케이크", "빙수", "베이커리", "차", "마카롱"])) {
         parsed.category = "카페 디저트";
-      } else if (includesAny(text, ["술집", "주점", "바", "포차", "맥주집", "와인바"])) {
+      } else if (includesAny(text, ["술집", "주점", "바", "포차", "맥주집", "와인바", "호프", "이자카야"])) {
         parsed.category = "주점 바";
       }
 
-      if (includesAny(text, ["맛있는", "맛있", "맛집", "잘하는"])) parsed.priority = "맛";
-      else if (includesAny(text, ["가성비", "저렴", "싸", "부담없는"])) parsed.priority = "가성비";
-      else if (includesAny(text, ["분위기", "감성", "무드", "예쁜"])) parsed.priority = "분위기";
+      /* 우선 조건 (#9: 키워드 확장) */
+      if (includesAny(text, ["맛있는", "맛있", "맛집", "잘하는", "맛 좋"])) parsed.priority = "맛";
+      else if (includesAny(text, ["가성비", "저렴", "싸", "부담없는", "싼", "착한 가격"])) parsed.priority = "가성비";
+      else if (includesAny(text, ["분위기", "감성", "무드", "예쁜", "인테리어"])) parsed.priority = "분위기";
 
+      /* 성비 (#8: 숫자 비교 로직) */
       const genderText = text.replaceAll("남자친구", "").replaceAll("여자친구", "");
       const maleMatch = genderText.match(/남자\s*(\d+)/);
       const femaleMatch = genderText.match(/여자\s*(\d+)/);
@@ -544,14 +687,24 @@ HTML = r"""
         if (m > f) parsed.genderMix = "남자 위주";
         else if (f > m) parsed.genderMix = "여자 위주";
         else parsed.genderMix = "반반";
-      } else if (hasMale) parsed.genderMix = "남자 위주";
-      else if (hasFemale) parsed.genderMix = "여자 위주";
-      else if (hasMale) parsed.genderMix = "남자 위주";
-      else if (hasFemale) parsed.genderMix = "여자 위주";
+      } else {
+        const hasMale = genderText.includes("남자");
+        const hasFemale = genderText.includes("여자");
+        if (hasMale && !hasFemale) parsed.genderMix = "남자 위주";
+        else if (hasFemale && !hasMale) parsed.genderMix = "여자 위주";
+      }
 
-      if (includesAny(text, ["조용", "대화", "차분"])) parsed.atmosphere = "조용";
-      else if (includesAny(text, ["시끌", "활기", "핫플", "북적"])) parsed.atmosphere = "활기";
+      /* 분위기 */
+      if (includesAny(text, ["조용", "대화", "차분", "고요"])) parsed.atmosphere = "조용";
+      else if (includesAny(text, ["시끌", "활기", "핫플", "북적", "신나"])) parsed.atmosphere = "활기";
       else if (includesAny(text, ["넓", "단체", "회식", "자리 많"])) parsed.atmosphere = "넓은 곳";
+
+      /* 시간 (#9: 시간 파싱 추가) */
+      const time = parseTime(text);
+      if (time) parsed.time = time;
+
+      /* #9: 경고 표시 */
+      parsed._warnings = warnings;
 
       return parsed;
     }
@@ -565,7 +718,19 @@ HTML = r"""
       if (parsed.priority) $("priority").value = parsed.priority;
       if (parsed.genderMix) $("genderMix").value = parsed.genderMix;
       if (parsed.atmosphere) $("atmosphere").value = parsed.atmosphere;
-      renderChips(parsed);
+
+      /* #9: 경고 표시 */
+      const warningEl = $("parseWarning");
+      if (parsed._warnings && parsed._warnings.length > 0) {
+        warningEl.textContent = parsed._warnings.join(" ");
+        warningEl.style.display = "block";
+      } else {
+        warningEl.style.display = "none";
+      }
+
+      const display = { ...parsed };
+      delete display._warnings;
+      renderChips(display);
     }
 
     function renderChips(parsed) {
@@ -575,6 +740,11 @@ HTML = r"""
         : `<span class="chip">인식된 조건 없음</span>`;
     }
 
+    /* ── #10 + #11 fix: scoring ──
+     * Model scores are now computed server-side from the trained model.
+     * Rule-based bonuses are reduced to minor UI-level adjustments (max ±0.03)
+     * instead of the previous ±0.07~0.08 that duplicated what the model should learn.
+     */
     function scoreRestaurant(restaurant, scoreColumn, partySize, atmosphere, priority) {
       let score = Number(restaurant[scoreColumn] || 0);
       const reasons = [`모델 적합도 ${(score * 100).toFixed(1)}점`];
@@ -588,35 +758,39 @@ HTML = r"""
       if (value >= 0.7) reasons.push("가성비 점수 높음");
       if (restaurant.collected_review_count >= 30) reasons.push("리뷰 근거 충분");
 
-      if (partySize >= 5) {
-        const groupBoost = restaurant.seat_type.includes("group") ? 0.08 : 0;
-        const spaciousBoost = spaciousness * 0.04;
-        score += groupBoost + spaciousBoost;
-        if (groupBoost) reasons.push("단체석 언급");
+      if (restaurant.price > 0) {
+        const priceFormatted = Number(restaurant.price).toLocaleString("ko-KR");
+        reasons.push(`평균 ${priceFormatted}원`);
+      }
+
+      /* #11: bonuses reduced — model already accounts for seat_type and atmosphere */
+      if (partySize >= 5 && restaurant.seat_type.includes("group")) {
+        score += 0.03;
+        reasons.push("단체석 언급");
       } else if (partySize === 2 && restaurant.seat_type.includes("couple")) {
-        score += 0.05;
+        score += 0.02;
         reasons.push("2인/데이트 좌석 언급");
       }
 
       if (atmosphere === "조용") {
-        score += (1 - noise) * 0.05;
+        score += (1 - noise) * 0.02;
         reasons.push("조용한 분위기 반영");
       } else if (atmosphere === "활기") {
-        score += noise * 0.05;
+        score += noise * 0.02;
         reasons.push("활기 있는 분위기 반영");
       } else if (atmosphere === "넓은 곳") {
-        score += spaciousness * 0.06;
+        score += spaciousness * 0.03;
         reasons.push("공간감 반영");
       }
 
       if (priority === "맛") {
-        score += taste * 0.07;
+        score += taste * 0.03;
         reasons.push("맛 우선 조건 반영");
       } else if (priority === "가성비") {
-        score += value * 0.07;
+        score += value * 0.03;
         reasons.push("가성비 우선 조건 반영");
       } else if (priority === "분위기") {
-        score += ((1 - noise) * 0.03) + (spaciousness * 0.03);
+        score += ((1 - noise) * 0.015) + (spaciousness * 0.015);
         reasons.push("분위기 우선 조건 반영");
       }
 

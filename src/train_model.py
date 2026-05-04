@@ -31,6 +31,7 @@ LABEL_COLUMNS = [
 NUMERIC_FEATURES = [
     "rating",
     "review_count",
+    "price",
     "photo_ratio",
     "collected_review_count",
     "taste_score",
@@ -110,10 +111,6 @@ def out_of_fold_predictions(x_data, y_data, seat_columns):
 
     Each restaurant's score comes from a model that did NOT see that
     restaurant during training, eliminating data leakage.
-
-    Returns:
-        oof_scores: np.ndarray of shape (n_samples, n_labels)
-        oof_preds: np.ndarray of shape (n_samples, n_labels) for report
     """
     n_samples = len(x_data)
     n_labels = len(LABEL_COLUMNS)
