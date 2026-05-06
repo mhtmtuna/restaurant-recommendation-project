@@ -51,17 +51,58 @@ py src/web_app.py
 
 크롤링은 오래 걸릴 수 있고, 중간에 종료해도 다음 실행 때 `data/raw_reviews.csv`와 `data/crawl_status.csv` 기준으로 이어서 진행됩니다.
 
-## 주요 파일
+## 폴더와 파일 역할
 
-- `src/web_app.py`: 자연어 입력 + 선택형 입력 웹 UI
-- `src/recommend.py`: 터미널 추천 실행
-- `src/train_model.py`: 멀티라벨 추천 모델 학습
-- `src/build_features.py`: 리뷰 데이터에서 feature 생성
-- `src/crawl_kakao.py`: 카카오맵 리뷰 수집
-- `config/keywords.json`: feature/라벨 키워드 사전
-- `config/sampling_plan.json`: 크롤링 지역, 카테고리, 수집 개수 설정
-- `data/restaurants_features.csv`: 식당별 feature 결과
-- `data/restaurant_label_scores.csv`: 식당별 추천 점수
+```text
+restaurant-recommendation-project/
+├─ config/
+├─ data/
+├─ models/
+├─ src/
+├─ README.md
+└─ requirements.txt
+```
+
+### `config/`
+
+프로젝트 실행에 필요한 설정 파일을 모아둔 폴더입니다.
+
+- `keywords.json`: 리뷰에서 맛, 가성비, 양, 분위기, 좌석, 상황 라벨을 추출하기 위한 키워드 사전입니다.
+- `sampling_plan.json`: 크롤링할 지역, 카테고리, 카테고리별 식당 수, 식당별 리뷰 수를 설정합니다.
+
+### `data/`
+
+크롤링 결과, feature 결과, 모델 출력 결과를 저장하는 폴더입니다.
+
+- `raw_reviews_sample.csv`: 실제 크롤링 없이 기능을 확인할 수 있는 샘플 리뷰 데이터입니다.
+- `raw_reviews.csv`: 카카오맵에서 수집한 원본 리뷰 데이터입니다. 용량이 커질 수 있어 Git에는 올리지 않습니다.
+- `crawl_status.csv`: 크롤링한 식당별 진행 상태입니다. `completed`, `partial`, `no_reviews` 같은 상태를 기록해 중간 재실행을 돕습니다.
+- `crawl_errors.csv`: 크롤링 중 실패한 검색어나 식당을 기록합니다.
+- `restaurants_features.csv`: 원본 리뷰를 식당 단위 feature로 변환한 결과입니다.
+- `restaurant_label_scores.csv`: 학습된 추천 모델이 식당별로 예측한 상황별 추천 점수입니다.
+- `model_report.json`: 모델 학습 후 생성되는 평가 리포트입니다.
+
+### `models/`
+
+학습된 모델 파일을 저장하는 폴더입니다.
+
+- `restaurant_recommender.joblib`: `src/train_model.py` 실행 시 생성되는 추천 모델 파일입니다.
+- 모델 파일은 용량이 커질 수 있어 Git에는 올리지 않습니다.
+
+### `src/`
+
+실제 실행 코드가 들어 있는 폴더입니다.
+
+- `crawl_kakao.py`: 카카오맵에서 식당과 리뷰를 수집해 `data/raw_reviews.csv`를 생성합니다.
+- `build_features.py`: 리뷰 데이터를 읽어 식당별 점수, 신뢰도, 라벨을 계산하고 `data/restaurants_features.csv`를 생성합니다.
+- `train_model.py`: feature 데이터를 기반으로 멀티라벨 추천 모델을 학습하고 모델 파일, 평가 리포트, 추천 점수 CSV를 생성합니다.
+- `recommend.py`: 터미널에서 관계, 상황, 지역을 입력해 추천 결과를 확인하는 간단한 실행 파일입니다.
+- `web_app.py`: 자연어 입력과 선택형 입력을 함께 제공하는 웹 UI입니다.
+
+### 루트 파일
+
+- `README.md`: 프로젝트 설명, 실행 방법, 파일 구조를 정리한 문서입니다.
+- `requirements.txt`: 실행에 필요한 Python 패키지 목록입니다.
 
 ## 핵심 아이디어
 
