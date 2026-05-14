@@ -1,3 +1,4 @@
+import argparse
 import csv
 import json
 import re
@@ -7,7 +8,14 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    JavascriptException,
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+    WebDriverException,
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -73,7 +81,7 @@ def safe_click(driver, element):
     time.sleep(0.3)
     try:
         element.click()
-    except Exception:
+    except (ElementClickInterceptedException, StaleElementReferenceException):
         driver.execute_script("arguments[0].click();", element)
 
 
@@ -183,8 +191,30 @@ def expand_reviews(driver, target_count):
             print(f"  no more reviews loaded; moving on with {len(reviews)} reviews")
             return
 
-        driver.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 1.2));")
+        clicked_more = click_more_reviews(driver)
+        if not clicked_more:
+            driver.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 1.2));")
         time.sleep(0.7)
+
+
+def click_more_reviews(driver):
+    selectors = [
+        "button",
+        "a",
+        "[role='button']",
+        ".link_more",
+        ".btn_more",
+    ]
+    for selector in selectors:
+        for element in driver.find_elements(By.CSS_SELECTOR, selector):
+            try:
+                text = element.text.strip()
+                if element.is_displayed() and any(word in text for word in MORE_WORDS):
+                    safe_click(driver, element)
+                    return True
+            except (StaleElementReferenceException, WebDriverException):
+                continue
+    return False
 
 
 def collect_review_texts(driver):
@@ -208,12 +238,96 @@ def collect_review_texts(driver):
     return texts
 
 
+def extract_price(driver):
+    """Extract average price from the place info page.
+
+    Tries multiple selectors that Kakao Map uses for price/menu info.
+    Returns a price string (digits only) or empty string if not found.
+    """
+    price_selectors = [
+        ".info_price .txt_price",
+        "[class*='price'] [class*='txt']",
+        ".detail_price",
+        ".info_menu .price_menu",
+        "[class*='menu'] [class*='price']",
+        ".list_menu .price_menu",
+    ]
+    prices = []
+    for selector in price_selectors:
+        for element in driver.find_elements(By.CSS_SELECTOR, selector):
+            text = element.text.strip()
+            match = re.search(r"[\d,]+", text)
+            if match:
+                value = int(match.group(0).replace(",", ""))
+                if 1000 <= value <= 500000:
+                    prices.append(value)
+    if prices:
+        avg = sum(prices) // len(prices)
+        return str(avg)
+    return ""
+
+
+def extract_photo_ratio(driver):
+    """Estimate photo review ratio from visible review elements.
+
+    Counts review items that contain image elements vs total review items.
+    Returns a ratio string (0.0~1.0) or empty string if not calculable.
+    """
+    review_container_selectors = [
+        ".list_evaluation > li",
+        ".list_review > li",
+        "[class*='review_list'] > li",
+        "[class*='review'] > [class*='item']",
+    ]
+    total = 0
+    with_photo = 0
+    for selector in review_container_selectors:
+        items = driver.find_elements(By.CSS_SELECTOR, selector)
+        if not items:
+            continue
+        total = len(items)
+        for item in items:
+            photos = item.find_elements(By.CSS_SELECTOR, "img[src*='photo'], img[src*='img'], .photo_area img")
+            if photos:
+                with_photo += 1
+        break
+
+    if total >= 3:
+        ratio = round(with_photo / total, 2)
+        return str(ratio)
+    return ""
+
+
+def collect_place_info(driver, place_url):
+    """Navigate to the place info page and extract price and photo_ratio.
+
+    Visits the main info tab first, then the review tab.
+    Returns (price, photo_ratio) as strings.
+    """
+    info_url = place_url.split("#")[0]
+    driver.get(info_url)
+    time.sleep(1.5)
+
+    price = extract_price(driver)
+    if price:
+        print(f"  extracted price: {price}")
+
+    return price
+
+
 def collect_place_reviews(driver, place, area, category, review_limit):
+    price = collect_place_info(driver, place.url)
+
     url = place.url.split("#")[0] + "#review"
     driver.get(url)
     time.sleep(1.5)
     if "#review" not in driver.current_url:
         click_review_tab(driver)
+
+    photo_ratio = extract_photo_ratio(driver)
+    if photo_ratio:
+        print(f"  extracted photo_ratio: {photo_ratio}")
+
     expand_reviews(driver, review_limit)
     reviews = collect_review_texts(driver)[:review_limit]
 
@@ -230,8 +344,8 @@ def collect_place_reviews(driver, place, area, category, review_limit):
                 "category": category,
                 "rating": place.rating,
                 "review_count": place.review_count,
-                "price": "",
-                "photo_ratio": "",
+                "price": price,
+                "photo_ratio": photo_ratio,
                 "review_text": review,
             }
         )
@@ -284,7 +398,7 @@ def status_for_count(collected_count, target_count):
 
 
 def is_finished_status(status):
-    return status in {"completed", "partial", "no_reviews"}
+    return status == "completed"
 
 
 def read_existing_rows(path):
@@ -316,6 +430,11 @@ def review_counts_by_restaurant(rows):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--headless", action="store_true", default=True)
+    parser.add_argument("--show-browser", action="store_false", dest="headless")
+    args = parser.parse_args()
+
     plan = load_plan()
     output_path = ROOT / plan["output_path"]
     all_rows = dedupe_rows(read_existing_rows(output_path))
@@ -325,14 +444,27 @@ def main():
     if statuses:
         print(f"[resume] loaded {len(statuses)} crawl statuses from {STATUS_PATH}")
 
-    driver = make_driver(headless=False)
+    driver = make_driver(headless=args.headless)
     try:
         for area in plan["areas"]:
             for category in plan["categories"]:
                 print(f"[search] {area} / {category}")
                 try:
                     places = search_places(driver, area, category, plan["restaurants_per_group"])
-                except Exception as error:
+                except TimeoutException as error:
+                    print(f"[error] search timeout: {area} / {category} / {error}")
+                    append_error(
+                        {
+                            "area": area,
+                            "category": category,
+                            "restaurant_id": "",
+                            "restaurant_name": "",
+                            "stage": "search_timeout",
+                            "error": repr(error),
+                        }
+                    )
+                    continue
+                except WebDriverException as error:
                     print(f"[error] search failed: {area} / {category} / {error}")
                     append_error(
                         {
@@ -340,7 +472,7 @@ def main():
                             "category": category,
                             "restaurant_id": "",
                             "restaurant_name": "",
-                            "stage": "search",
+                            "stage": "search_webdriver",
                             "error": repr(error),
                         }
                     )
@@ -363,7 +495,20 @@ def main():
                     print(f"[reviews] {area} {category} {idx}/{len(places)} {place.name}")
                     try:
                         rows = collect_place_reviews(driver, place, area, category, plan["reviews_per_restaurant"])
-                    except Exception as error:
+                    except TimeoutException as error:
+                        print(f"[error] reviews timeout: {place.name} / {error}")
+                        append_error(
+                            {
+                                "area": area,
+                                "category": category,
+                                "restaurant_id": place.place_id,
+                                "restaurant_name": place.name,
+                                "stage": "reviews_timeout",
+                                "error": repr(error),
+                            }
+                        )
+                        continue
+                    except (NoSuchElementException, StaleElementReferenceException, WebDriverException, JavascriptException) as error:
                         print(f"[error] reviews failed: {place.name} / {error}")
                         append_error(
                             {
@@ -371,7 +516,7 @@ def main():
                                 "category": category,
                                 "restaurant_id": place.place_id,
                                 "restaurant_name": place.name,
-                                "stage": "reviews",
+                                "stage": "reviews_webdriver",
                                 "error": repr(error),
                             }
                         )

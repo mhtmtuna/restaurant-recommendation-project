@@ -1,6 +1,35 @@
 {
   "train_size": 260,
   "test_size": 87,
+  "n_folds": 5,
+  "method": "legacy holdout report; rerun src/train_model.py to regenerate out-of-fold multilabel-aware report",
+  "label_distribution": {
+    "couple_meal": {
+      "positive_samples": 149,
+      "needs_more_data": false
+    },
+    "couple_drink": {
+      "positive_samples": 256,
+      "needs_more_data": false
+    },
+    "friend_meal": {
+      "positive_samples": 40,
+      "needs_more_data": false
+    },
+    "friend_drink": {
+      "positive_samples": 40,
+      "needs_more_data": false
+    },
+    "business_meal": {
+      "positive_samples": 51,
+      "needs_more_data": false
+    },
+    "business_drink": {
+      "positive_samples": 37,
+      "needs_more_data": false
+    }
+  },
+  "warnings": [],
   "labels": [
     "couple_meal",
     "couple_drink",
