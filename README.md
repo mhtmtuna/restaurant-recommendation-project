@@ -170,3 +170,40 @@ py src/web_app.py
 ## 주의
 
 카카오맵 화면 구조가 바뀌면 CSS 선택자를 조정해야 할 수 있습니다. 수집은 공개 페이지를 대상으로 천천히 진행하고, 서비스 약관과 robots 정책을 확인한 뒤 사용하세요.
+
+## 2026-05-14 수정사항
+
+### 심각한 문제 수정
+- `friend_drink` 희소 라벨 대응: `train_model.py`에서 라벨별 positive sample 수를 `model_report.json`의 `label_distribution` 및 `warnings`에 기록하도록 변경했습니다. 30개 미만 라벨은 `needs_more_data=true`로 표시됩니다. 현재 `data/restaurants_features.csv` 기준 `friend_drink` positive 샘플은 40개로 확인되지만, 재학습 시 자동 경고가 남도록 방어했습니다.
+- 모델 파일 부재 시 silent fallback 제거: `web_app.py`가 `.joblib` 모델 파일 부재/로드 실패를 콘솔과 웹 UI 상단 상태 배너에 표시합니다.
+- 전체 데이터 학습 모델의 동일 데이터 재예측 방지: `web_app.py`는 기본적으로 `data/restaurant_label_scores.csv`의 out-of-fold 점수를 우선 사용합니다. CSV가 없을 때만 full-data 모델 추론 fallback을 사용하며, 이 경우 UI에 경고가 표시됩니다.
+
+### 중간 수준 문제 수정
+- 부정 표현 감지 개선: `build_features.py`의 `NEGATION_WINDOW`를 4에서 12로 확대하고, 키워드 앞/뒤 양방향에서 부정 표현을 탐지하도록 개선했습니다.
+- 좌석 유형 매칭 개선: `2인용 테이블`, `4인석`, `단체룸`, `바 자리`, `개별룸` 같은 표현을 정규식으로 인식하도록 `matches_seat_type`을 추가했습니다.
+- KFold 분포 보존 개선: 일반 `KFold` 대신 희소 멀티라벨을 fold별로 최대한 분산하는 greedy multilabel fold 배정을 추가했습니다.
+- 크롤러 예외 처리 세분화: `crawl_kakao.py`에서 Selenium 예외를 stage별로 분리 기록합니다.
+
+### 데이터 처리 문제 수정
+- 리뷰 0개 식당 방어: `sentiment_score`, `directional_score`, `label_value`에서 빈 리뷰 리스트일 때 0 또는 `None`을 반환하도록 수정했습니다.
+- 빈 데이터 shrinkage 방어: `apply_bayesian_shrinkage(rows)`가 빈 rows를 받으면 즉시 반환하도록 수정했습니다.
+- 빈 feature 출력 방어: `write_features(rows)`는 저장할 row가 없으면 명확한 `ValueError`를 발생시킵니다.
+- 키워드 기반 feature 개선: 키워드 첫 1회만 보던 로직을 모든 위치 검사로 바꾸고, 부정 접미 표현도 처리하도록 보강했습니다.
+
+### 2026-05-14 추가 수정사항
+- `web_app.py` 데이터 캐싱: GET 요청마다 CSV와 모델을 다시 읽던 구조를 서버 시작 시 1회 로드 후 `server.cached_page`를 재사용하도록 변경했습니다.
+- `build_features.py` 라벨 부정어 처리: `label_value`가 `데이트 아님`, `조용하지 않음`처럼 부정어가 붙은 라벨 키워드를 positive hit로 세지 않도록 수정했습니다.
+- `web_app.py` JSON XSS 방어: `<`, `>`, `&`, `/` 문자를 `safe_json`에서 유니코드 escape 처리해 `</script>` 삽입으로 script 태그가 깨지는 문제를 막았습니다.
+- `web_app.py` DataFrame 인덱스 버그: `predict_scores_from_model`에서 DataFrame index 대신 `enumerate` 위치값으로 `predict_proba` 결과를 매칭하도록 수정했습니다.
+- `web_app.py` 전역 가변 상태 제거: `DATA_STATUS` 전역 딕셔너리를 없애고, `load_restaurants()`가 상태 dict를 반환해 요청 간 race condition 가능성을 줄였습니다.
+- `web_app.py` innerHTML XSS 방어: 식당명, 지역, 카테고리, 추천 사유를 `escapeHtml`로 escape한 뒤 렌더링하도록 변경했습니다.
+- `web_app.py` 모델 추론 경로 활성화: `--score-source auto|csv|model` 옵션을 추가해 CSV가 있어도 모델 추론을 명시적으로 선택할 수 있게 했습니다.
+- `requirements.txt`에 `numpy>=1.26.0`을 명시했습니다.
+- `web_app.py`에 `--host`, `--port` CLI 옵션을 추가해 포트 하드코딩을 해소했습니다.
+- `web_app.py`의 HTTP 로그는 4xx/5xx 오류만 남기도록 변경해 디버깅 가능한 상태로 조정했습니다.
+- `crawl_kakao.py`는 기본 headless 실행으로 바꾸고, 브라우저 창이 필요할 때 `--show-browser`를 사용할 수 있게 했습니다.
+- `tests/test_build_features.py`와 `tests/test_web_app.py`에 라벨 부정어, JSON escape, DataFrame index 매칭 테스트를 추가했습니다.
+
+### 남은 설계 과제
+- `keywords.json`의 라벨 키워드와 feature 키워드 중복은 모델 설계와 라벨링 정책을 함께 바꿔야 하므로 이번 코드 수정에서는 문서화 대상으로 남겼습니다.
+- `train_model.py`, `recommend.py`의 통합 테스트는 Python 실행 환경이 정상화된 뒤 추가로 확장하는 것이 좋습니다.

@@ -1,5 +1,6 @@
 import csv
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -11,7 +12,7 @@ OUT_PATH = ROOT / "data" / "restaurants_features.csv"
 
 SHRINKAGE_K = 5
 LABEL_THRESHOLD = 0.05
-NEGATION_WINDOW = 4
+NEGATION_WINDOW = 12
 
 
 def load_keywords():
@@ -24,11 +25,49 @@ def contains_any(text, words):
     return any(word in text for word in words)
 
 
-def is_negated(text, keyword_start, negation_prefixes):
-    """Check if a keyword at keyword_start is preceded by a negation prefix."""
+def is_negated(text, keyword_start, negation_prefixes, keyword=""):
+    """Check if a keyword is preceded by a nearby negation prefix."""
     start = max(0, keyword_start - NEGATION_WINDOW)
     prefix = text[start:keyword_start]
-    return any(neg in prefix for neg in negation_prefixes)
+    suffix_start = keyword_start + len(keyword)
+    suffix = text[suffix_start:suffix_start + NEGATION_WINDOW]
+    return any(neg in prefix or neg in suffix for neg in negation_prefixes)
+
+
+def keyword_positions(text, words):
+    """Yield all keyword positions instead of only the first match."""
+    text = str(text)
+    for word in words:
+        start = 0
+        while word:
+            idx = text.find(word, start)
+            if idx < 0:
+                break
+            yield word, idx
+            start = idx + len(word)
+
+
+def seat_type_patterns(seat):
+    return {
+        "couple": [
+            r"2\s*인(?:용)?\s*(?:석|자리|테이블)",
+            r"두\s*명\s*(?:자리|테이블)",
+        ],
+        "group": [
+            r"(?:단체|모임|회식)\s*(?:석|룸|자리|테이블)?",
+            r"[4-9]\s*인(?:용)?\s*(?:석|자리|테이블)",
+            r"\d+\s*명\s*(?:이상\s*)?(?:자리|테이블)",
+        ],
+        "bar": [r"(?:바|카운터)\s*(?:석|자리)"],
+        "floor": [r"(?:좌식|바닥)\s*(?:석|자리)"],
+        "room": [r"(?:룸|개별룸|프라이빗룸|방)\s*(?:석|자리)?"],
+    }.get(seat, [])
+
+
+def matches_seat_type(text, seat, words):
+    if contains_any(text, words):
+        return True
+    return any(re.search(pattern, str(text)) for pattern in seat_type_patterns(seat))
 
 
 def count_sentiment(text, positive_words, negative_words, negation_prefixes):
@@ -44,21 +83,17 @@ def count_sentiment(text, positive_words, negative_words, negation_prefixes):
     raw_neg = False
     negated_neg = False
 
-    for word in positive_words:
-        idx = text.find(word)
-        if idx >= 0:
-            if is_negated(text, idx, negation_prefixes):
-                negated_pos = True
-            else:
-                raw_pos = True
+    for word, idx in keyword_positions(text, positive_words):
+        if is_negated(text, idx, negation_prefixes, word):
+            negated_pos = True
+        else:
+            raw_pos = True
 
-    for word in negative_words:
-        idx = text.find(word)
-        if idx >= 0:
-            if is_negated(text, idx, negation_prefixes):
-                negated_neg = True
-            else:
-                raw_neg = True
+    for word, idx in keyword_positions(text, negative_words):
+        if is_negated(text, idx, negation_prefixes, word):
+            negated_neg = True
+        else:
+            raw_neg = True
 
     effective_pos = raw_pos or negated_neg
     effective_neg = raw_neg or negated_pos
@@ -66,6 +101,8 @@ def count_sentiment(text, positive_words, negative_words, negation_prefixes):
 
 
 def sentiment_score(reviews, positive_words, negative_words, negation_prefixes):
+    if not reviews:
+        return None, 0.0, 0
     pos = 0
     neg = 0
     for text in reviews:
@@ -94,21 +131,17 @@ def count_directional(text, high_words, low_words, negation_prefixes):
     raw_low = False
     negated_low = False
 
-    for word in high_words:
-        idx = text.find(word)
-        if idx >= 0:
-            if is_negated(text, idx, negation_prefixes):
-                negated_high = True
-            else:
-                raw_high = True
+    for word, idx in keyword_positions(text, high_words):
+        if is_negated(text, idx, negation_prefixes, word):
+            negated_high = True
+        else:
+            raw_high = True
 
-    for word in low_words:
-        idx = text.find(word)
-        if idx >= 0:
-            if is_negated(text, idx, negation_prefixes):
-                negated_low = True
-            else:
-                raw_low = True
+    for word, idx in keyword_positions(text, low_words):
+        if is_negated(text, idx, negation_prefixes, word):
+            negated_low = True
+        else:
+            raw_low = True
 
     effective_high = raw_high or negated_low
     effective_low = raw_low or negated_high
@@ -116,6 +149,8 @@ def count_directional(text, high_words, low_words, negation_prefixes):
 
 
 def directional_score(reviews, high_words, low_words, negation_prefixes):
+    if not reviews:
+        return None, 0.0, 0
     high = 0
     low = 0
     for text in reviews:
@@ -131,8 +166,18 @@ def directional_score(reviews, high_words, low_words, negation_prefixes):
     return score, mentions / len(reviews), mentions
 
 
-def label_value(reviews, label_words):
-    hits = sum(contains_any(text, label_words) for text in reviews)
+def has_unnegated_label(text, label_words, negation_prefixes):
+    for word, idx in keyword_positions(text, label_words):
+        if not is_negated(str(text), idx, negation_prefixes, word):
+            return True
+    return False
+
+
+def label_value(reviews, label_words, negation_prefixes=None):
+    if not reviews:
+        return 0
+    negation_prefixes = negation_prefixes or []
+    hits = sum(has_unnegated_label(text, label_words, negation_prefixes) for text in reviews)
     return int((hits / len(reviews)) >= LABEL_THRESHOLD)
 
 
@@ -173,6 +218,9 @@ def apply_bayesian_shrinkage(rows):
     Compared to hard cutoff + mean imputation, this preserves partial
     information from low-mention restaurants instead of throwing it away.
     """
+    if not rows:
+        return
+
     score_cols = [col for col in rows[0] if col.endswith("_score")]
     mentions_map = {}
     for col in score_cols:
@@ -283,12 +331,12 @@ def build_features(raw_rows, keywords):
 
         seat_hits = []
         for seat, words in features["seat_type"].items():
-            if any(contains_any(text, words) for text in reviews):
+            if any(matches_seat_type(text, seat, words) for text in reviews):
                 seat_hits.append(seat)
         row["seat_type"] = ",".join(seat_hits)
 
         for label, words in keywords["labels"].items():
-            row[label] = label_value(reviews, words)
+            row[label] = label_value(reviews, words, negation_prefixes)
 
         rows.append(row)
 
@@ -297,6 +345,8 @@ def build_features(raw_rows, keywords):
 
 
 def write_features(rows):
+    if not rows:
+        raise ValueError("No feature rows to write. Check raw review input.")
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(rows[0].keys())
     with OUT_PATH.open("w", encoding="utf-8-sig", newline="") as f:

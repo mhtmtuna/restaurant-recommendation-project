@@ -1,5 +1,7 @@
 import csv
+import argparse
 import json
+import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -11,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SCORES_PATH = ROOT / "data" / "restaurant_label_scores.csv"
 FEATURES_PATH = ROOT / "data" / "restaurants_features.csv"
 MODEL_PATH = ROOT / "models" / "restaurant_recommender.joblib"
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 LABEL_COLUMNS_LIST = [
     "couple_meal",
@@ -45,20 +50,36 @@ def to_float(value, default=0.0):
         return default
 
 
-def load_model_bundle():
+def safe_json(value):
+    """Serialize JSON for embedding inside a script tag."""
+    return (
+        json.dumps(value, ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("/", "\\/")
+    )
+
+
+def load_model_bundle(status):
     """Load the trained model bundle from joblib.
 
     Returns the bundle dict or None if the model file does not exist.
     """
     if not MODEL_PATH.exists():
-        print(f"[warn] model not found: {MODEL_PATH}, falling back to CSV scores")
+        status["model_available"] = False
+        status["message"] = f"model not found: {MODEL_PATH}; using out-of-fold CSV scores"
+        logger.warning("[warn] %s", status["message"])
         return None
     try:
         bundle = joblib.load(MODEL_PATH)
-        print(f"[model] loaded: {MODEL_PATH}")
+        status["model_available"] = True
+        logger.info("[model] loaded: %s", MODEL_PATH)
         return bundle
     except Exception as e:
-        print(f"[warn] model load failed: {e}, falling back to CSV scores")
+        status["model_available"] = False
+        status["message"] = f"model load failed: {e}; using out-of-fold CSV scores"
+        logger.warning("[warn] %s", status["message"])
         return None
 
 
@@ -91,29 +112,51 @@ def predict_scores_from_model(bundle, features_data):
     probabilities = model.predict_proba(x_data)
 
     scores = {}
-    for i, row in data.iterrows():
+    for position, (_, row) in enumerate(data.iterrows()):
         rid = row["restaurant_id"]
         scores[rid] = {}
         for j, label in enumerate(LABEL_COLUMNS_LIST):
-            scores[rid][f"{label}_score"] = float(probabilities[i][j])
+            scores[rid][f"{label}_score"] = float(probabilities[position][j])
 
     return scores
 
 
-def load_restaurants():
+def load_restaurants(score_source="auto"):
+    status = {
+        "score_source": "unknown",
+        "model_available": False,
+        "message": "",
+    }
     features_rows = read_csv(FEATURES_PATH)
     features_map = {row["restaurant_id"]: row for row in features_rows}
 
-    model_bundle = load_model_bundle()
+    model_bundle = load_model_bundle(status)
+    csv_scores = {}
+    use_csv = score_source in {"auto", "csv"} and SCORES_PATH.exists()
+    use_model = score_source == "model" or (score_source == "auto" and not use_csv)
 
-    if model_bundle is not None:
-        features_df = pd.read_csv(FEATURES_PATH)
-        model_scores = predict_scores_from_model(model_bundle, features_df)
-        print(f"[model] predicted scores for {len(model_scores)} restaurants")
-    else:
-        model_scores = None
+    if use_csv:
         score_rows = read_csv(SCORES_PATH)
         csv_scores = {row["restaurant_id"]: row for row in score_rows}
+        status["score_source"] = "out-of-fold CSV"
+        model_note = "" if status["model_available"] else " Trained .joblib model is not available."
+        status["message"] = (
+            "Using out-of-fold CSV scores to avoid same-data model prediction bias."
+            f"{model_note}"
+        )
+        logger.info("[scores] loaded out-of-fold CSV scores for %s restaurants", len(csv_scores))
+    elif use_model and model_bundle is not None:
+        features_df = pd.read_csv(FEATURES_PATH)
+        csv_scores = predict_scores_from_model(model_bundle, features_df)
+        status["score_source"] = "model inference fallback"
+        status["message"] = (
+            "Out-of-fold CSV score file is missing; using model predictions from the full-data model."
+        )
+        logger.warning("[warn] %s", status["message"])
+        logger.info("[model] predicted scores for %s restaurants", len(csv_scores))
+    else:
+        status["score_source"] = "zero fallback"
+        status["message"] = "No usable score source found; all recommendation scores default to 0."
 
     restaurants = []
     for rid, feature in features_map.items():
@@ -136,10 +179,7 @@ def load_restaurants():
             "collected_review_count": int(to_float(feature.get("collected_review_count"))),
         }
 
-        if model_scores is not None and rid in model_scores:
-            for label, column in LABEL_COLUMNS.items():
-                item[column] = model_scores[rid].get(column, 0.0)
-        elif model_scores is None and rid in csv_scores:
+        if rid in csv_scores:
             for label, column in LABEL_COLUMNS.items():
                 item[column] = to_float(csv_scores[rid].get(column))
         else:
@@ -148,7 +188,13 @@ def load_restaurants():
 
         restaurants.append(item)
 
-    return restaurants
+    return restaurants, status
+
+
+def render_page(restaurants, data_status):
+    restaurants_json = safe_json(restaurants)
+    data_status_json = safe_json(data_status)
+    return HTML.replace("__RESTAURANTS__", restaurants_json).replace("__DATA_STATUS__", data_status_json)
 
 
 HTML = r"""
@@ -169,6 +215,8 @@ HTML = r"""
       --accent: #1e7560;
       --accent-weak: #e1f0eb;
       --warm: #b45f35;
+      --danger: #8d2d21;
+      --danger-bg: #fff1ed;
       --shadow: 0 10px 30px rgba(31, 37, 35, 0.08);
     }
 
@@ -253,6 +301,22 @@ HTML = r"""
       font-size: 13px;
       margin-top: 8px;
       display: none;
+    }
+
+    .system-status {
+      max-width: 1180px;
+      margin: 16px auto 0;
+      padding: 10px 24px 0;
+      color: var(--danger);
+      font-size: 13px;
+    }
+
+    .system-status span {
+      display: inline-block;
+      background: var(--danger-bg);
+      border: 1px solid #f0c8bd;
+      border-radius: 8px;
+      padding: 8px 10px;
     }
 
     textarea {
@@ -440,6 +504,7 @@ HTML = r"""
       <div class="meta"><span id="restaurantCount"></span>개 식당 기반</div>
     </div>
   </header>
+  <div class="system-status"><span id="systemStatus"></span></div>
 
   <main>
     <section class="panel controls">
@@ -549,6 +614,7 @@ HTML = r"""
 
   <script>
     const restaurants = __RESTAURANTS__;
+    const dataStatus = __DATA_STATUS__;
     const labelMap = {
       "연인_식사": "couple_meal_score",
       "연인_술자리": "couple_drink_score",
@@ -562,6 +628,15 @@ HTML = r"""
 
     function includesAny(text, words) {
       return words.some((word) => text.includes(word));
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
     }
 
     /* ── #7 fix: parsePartySize ── */
@@ -828,10 +903,10 @@ HTML = r"""
           <div class="item-head">
             <div>
               <div class="rank">#${index + 1}</div>
-              <div class="name">${item.restaurant_name}</div>
+              <div class="name">${escapeHtml(item.restaurant_name)}</div>
               <div class="details">
-                <span class="detail">${item.area}</span>
-                <span class="detail">${item.category}</span>
+                <span class="detail">${escapeHtml(item.area)}</span>
+                <span class="detail">${escapeHtml(item.category)}</span>
                 <span class="detail">별점 ${Number(item.rating || 0).toFixed(1)}</span>
                 <span class="detail">리뷰 ${item.review_count}</span>
                 <span class="detail">수집 ${item.collected_review_count}</span>
@@ -840,7 +915,7 @@ HTML = r"""
             <div class="score">${Math.round(item.score * 100)}</div>
           </div>
           <div class="details">
-            ${item.reasons.map((reason) => `<span class="detail">${reason}</span>`).join("")}
+            ${item.reasons.map((reason) => `<span class="detail">${escapeHtml(reason)}</span>`).join("")}
           </div>
         </article>
       `).join("");
@@ -855,6 +930,7 @@ HTML = r"""
     });
 
     $("restaurantCount").textContent = restaurants.length.toLocaleString("ko-KR");
+    $("systemStatus").textContent = `${dataStatus.score_source}: ${dataStatus.message}`;
     applyParsed(parseNatural($("natural").value));
     recommend();
   </script>
@@ -871,8 +947,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        restaurants_json = json.dumps(load_restaurants(), ensure_ascii=False)
-        page = HTML.replace("__RESTAURANTS__", restaurants_json)
+        page = self.server.cached_page
         body = page.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -881,14 +956,25 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format, *args):
-        return
+        status = str(args[1]) if len(args) > 1 else ""
+        if status.startswith(("4", "5")):
+            logger.warning("%s - %s", self.address_string(), format % args)
 
 
 def main():
-    host = "127.0.0.1"
-    port = 8000
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--score-source", choices=["auto", "csv", "model"], default="auto")
+    args = parser.parse_args()
+
+    host = args.host
+    port = args.port
+    restaurants, data_status = load_restaurants(args.score_source)
+    page = render_page(restaurants, data_status)
     server = ThreadingHTTPServer((host, port), Handler)
-    print(f"open http://{host}:{port}")
+    server.cached_page = page
+    logger.info("open http://%s:%s", host, port)
     server.serve_forever()
 
 
