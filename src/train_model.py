@@ -9,7 +9,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import classification_report
-from sklearn.multiclass import OneVsRestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MultiLabelBinarizer, OneHotEncoder
 
@@ -66,7 +65,9 @@ logger = logging.getLogger(__name__)
 def read_features():
     data = pd.read_csv(FEATURES_PATH)
     for col in NUMERIC_FEATURES + LABEL_COLUMNS:
-        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
+        values = pd.to_numeric(data[col], errors="coerce")
+        # 안전장치: 정상 흐름에서는 도달하지 않음.
+        data[col] = values.fillna(values.median())
     for col in CATEGORICAL_FEATURES + ["seat_type"]:
         data[col] = data[col].fillna("")
     return data
@@ -94,13 +95,12 @@ def make_pipeline(seat_columns):
             ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_FEATURES),
         ]
     )
-    classifier = OneVsRestClassifier(
-        RandomForestClassifier(
-            n_estimators=200,
-            min_samples_leaf=2,
-            random_state=42,
-            class_weight="balanced_subsample",
-        )
+    classifier = RandomForestClassifier(
+        n_estimators=200,
+        min_samples_leaf=2,
+        max_features=None,
+        random_state=42,
+        class_weight="balanced_subsample",
     )
     return Pipeline(
         steps=[
@@ -108,6 +108,21 @@ def make_pipeline(seat_columns):
             ("model", classifier),
         ]
     )
+
+
+def positive_class_probabilities(model, x_data):
+    """Return an n_samples x n_labels matrix from native multi-output RF probabilities."""
+    probabilities = model.predict_proba(x_data)
+    if isinstance(probabilities, np.ndarray):
+        return probabilities
+
+    scores = np.zeros((len(x_data), len(probabilities)))
+    classes_by_label = model.named_steps["model"].classes_
+    for label_idx, label_probabilities in enumerate(probabilities):
+        positive_idx = np.flatnonzero(classes_by_label[label_idx] == 1)
+        if len(positive_idx):
+            scores[:, label_idx] = label_probabilities[:, positive_idx[0]]
+    return scores
 
 
 def multilabel_fold_indices(y_data, n_folds):
@@ -167,7 +182,7 @@ def out_of_fold_predictions(x_data, y_data, seat_columns):
         fold_model = make_pipeline(seat_columns)
         fold_model.fit(x_data.iloc[train_idx], y_data.iloc[train_idx])
 
-        oof_scores[val_idx] = fold_model.predict_proba(x_data.iloc[val_idx])
+        oof_scores[val_idx] = positive_class_probabilities(fold_model, x_data.iloc[val_idx])
         oof_preds[val_idx] = fold_model.predict(x_data.iloc[val_idx])
 
     return oof_scores, oof_preds

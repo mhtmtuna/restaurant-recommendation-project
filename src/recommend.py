@@ -26,12 +26,18 @@ def main():
 
     score_col = LABEL_MAP[(args.relation, args.occasion)]
     scores = pd.read_csv(SCORES_PATH)
-    filtered = scores[scores["area"] == args.area].copy()
-    filtered = filtered.sort_values(score_col, ascending=False).head(args.top_k)
+
+    query = args.area.replace("구", "").replace("동", "")
+    mask = scores["area"].str.contains(query, na=False) | scores["area"].str.contains(args.area, na=False)
+    filtered = scores[mask].copy()
 
     if filtered.empty:
-        print("No recommendations found.")
+        available = sorted(scores["area"].dropna().unique())
+        print(f"'{args.area}'에 해당하는 식당이 없습니다.")
+        print(f"사용 가능한 지역: {', '.join(available)}")
         return
+
+    filtered = filtered.sort_values(score_col, ascending=False).head(args.top_k)
 
     for idx, row in enumerate(filtered.itertuples(index=False), start=1):
         print(
