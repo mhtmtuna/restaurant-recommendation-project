@@ -45,7 +45,7 @@ ERRORS_PATH = ROOT / "data" / "crawl_errors_naver.csv"
 
 # 네이버 플레이스 URL
 SEARCH_URL = "https://map.naver.com/p/search/{query}"
-REVIEW_URL = "https://pcmap.place.naver.com/restaurant/{place_id}/review/visitor"
+REVIEW_URL = "https://pcmap.place.naver.com/place/{place_id}/review/visitor"
 
 FIELDNAMES = [
     "restaurant_id", "restaurant_name", "area", "category",
@@ -135,6 +135,21 @@ def switch_to_iframe(driver, selectors, timeout=10):
 
 # ── 검색: 식당 목록 수집 ─────────────────────────────────────────────────────
 
+def _extract_place_id_from_url(driver):
+    """현재 메인 URL 또는 entryIframe src에서 place_id 추출."""
+    m = re.search(r"/place/(\d+)", driver.current_url)
+    if m:
+        return m.group(1)
+    driver.switch_to.default_content()
+    frames = driver.find_elements(By.CSS_SELECTOR, "#entryIframe")
+    if frames:
+        src = frames[0].get_attribute("src") or ""
+        m = re.search(r"/place/(\d+)", src)
+        if m:
+            return m.group(1)
+    return None
+
+
 def search_places(driver, area, category, limit):
     search_kw = CATEGORY_SEARCH.get(category, category)
     query = quote(f"{area} {search_kw} 맛집")
@@ -149,81 +164,16 @@ def search_places(driver, area, category, limit):
 
     wait = WebDriverWait(driver, 12)
     try:
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,
-            "li.UEzoS, li[class*='PlaceItem'], .place_bluelink, li[data-nclick*='plc']")))
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "li.UEzoS")))
     except TimeoutException:
         print(f"  [warn] 검색 결과 로드 실패: {area}/{category}")
         return []
 
-    places = []
-    seen = set()
-
+    # 카드를 limit 수만큼 스크롤해서 로드
     for _ in range(10):
-        cards = driver.find_elements(By.CSS_SELECTOR,
-            "li.UEzoS, li[class*='PlaceItem'], li[data-nclick*='plc']")
-
-        for card in cards:
-            # 식당명
-            name = ""
-            for sel in ["span.place_bluelink", ".TYaxT", "a[class*='name']", "span[class*='name']"]:
-                els = card.find_elements(By.CSS_SELECTOR, sel)
-                if els:
-                    name = els[0].text.strip()
-                    if name:
-                        break
-
-            # place_id: href에서 추출
-            place_id = ""
-            for a in card.find_elements(By.CSS_SELECTOR, "a"):
-                href = a.get_attribute("href") or ""
-                m = re.search(r"/(?:entry/place|p/entry/restaurant|restaurant)/(\d+)", href)
-                if not m:
-                    # data 속성에서 시도
-                    nclick = a.get_attribute("data-nclick") or ""
-                    m2 = re.search(r"plc\.(\d+)", nclick)
-                    if m2:
-                        place_id = f"nv_{m2.group(1)}"
-                        break
-                else:
-                    place_id = f"nv_{m.group(1)}"
-                    break
-
-            if not place_id:
-                # li 자체의 data 속성
-                for attr in ["data-id", "data-place-id"]:
-                    val = card.get_attribute(attr) or ""
-                    if val.isdigit():
-                        place_id = f"nv_{val}"
-                        break
-
-            if not name or not place_id or place_id in seen:
-                continue
-            seen.add(place_id)
-
-            # 별점, 리뷰 수
-            rating = ""
-            for sel in [".orXYY", "[class*='rating']", "[class*='score']"]:
-                els = card.find_elements(By.CSS_SELECTOR, sel)
-                if els:
-                    t = els[0].text.strip()
-                    if re.search(r"\d", t):
-                        rating = t
-                        break
-
-            review_count = ""
-            for sel in [".MVx6e", "[class*='review']", "[class*='count']"]:
-                els = card.find_elements(By.CSS_SELECTOR, sel)
-                if els:
-                    review_count = digits(els[0].text)
-                    if review_count:
-                        break
-
-            places.append(Place(place_id=place_id, name=name,
-                                rating=rating, review_count=review_count))
-            if len(places) >= limit:
-                return places
-
-        # 더보기 / 스크롤
+        cards = driver.find_elements(By.CSS_SELECTOR, "li.UEzoS")
+        if len(cards) >= limit:
+            break
         more = driver.find_elements(By.CSS_SELECTOR,
             "a.fvwqf, button[class*='more'], a[class*='more'], .BXNBd a")
         clicked = False
@@ -239,11 +189,83 @@ def search_places(driver, area, category, limit):
         if not clicked:
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(1.2)
-
-        new_cards = driver.find_elements(By.CSS_SELECTOR,
-            "li.UEzoS, li[class*='PlaceItem'], li[data-nclick*='plc']")
+        new_cards = driver.find_elements(By.CSS_SELECTOR, "li.UEzoS")
         if len(new_cards) <= len(cards) and not clicked:
             break
+
+    cards = driver.find_elements(By.CSS_SELECTOR, "li.UEzoS")
+    places = []
+    seen = set()
+
+    for card in cards:
+        if len(places) >= limit:
+            break
+
+        # 식당명 (span.TYaxT)
+        name_els = card.find_elements(By.CSS_SELECTOR, "span.TYaxT")
+        if not name_els:
+            continue
+        name = name_els[0].text.strip()
+        if not name:
+            continue
+
+        # 별점, 리뷰 수 — 클릭 전에 수집 (StaleElement 대비)
+        rating = ""
+        review_count = ""
+        try:
+            for sel in [".orXYY", "[class*='starScore']", "[class*='rating']"]:
+                els = card.find_elements(By.CSS_SELECTOR, sel)
+                if els:
+                    t = els[0].text.strip()
+                    if re.search(r"\d", t):
+                        rating = t
+                        break
+            mv_els = card.find_elements(By.CSS_SELECTOR, ".MVx6e, [class*='reviewCount']")
+            for el in mv_els:
+                d = digits(el.text)
+                if d:
+                    review_count = d
+                    break
+        except StaleElementReferenceException:
+            pass
+
+        # 카드 클릭 → 메인 URL의 /place/{id} 로 place_id 획득
+        try:
+            link = card.find_element(By.CSS_SELECTOR, "a.YTJkH, a.CtW3e")
+            driver.execute_script("arguments[0].click();", link)
+            time.sleep(1.5)
+            raw_id = _extract_place_id_from_url(driver)
+        except Exception:
+            raw_id = None
+
+        if not raw_id:
+            # searchIframe 재진입 후 다음 카드로
+            try:
+                driver.switch_to.default_content()
+                switch_to_iframe(driver, ["#searchIframe"])
+            except Exception:
+                pass
+            continue
+
+        place_id = f"nv_{raw_id}"
+        if place_id in seen:
+            try:
+                driver.switch_to.default_content()
+                switch_to_iframe(driver, ["#searchIframe"])
+            except Exception:
+                pass
+            continue
+        seen.add(place_id)
+        places.append(Place(place_id=place_id, name=name,
+                            rating=rating, review_count=review_count))
+
+        # searchIframe으로 복귀
+        try:
+            driver.switch_to.default_content()
+            switch_to_iframe(driver, ["#searchIframe"])
+            time.sleep(0.3)
+        except Exception:
+            pass
 
     return places
 
@@ -276,9 +298,15 @@ def _collect_visible_reviews(driver):
 
 def collect_reviews_and_meta(driver, place):
     raw_id = _get_raw_place_id(place.place_id)
-    url = REVIEW_URL.format(place_id=raw_id)
-    driver.get(url)
-    time.sleep(2.0)
+    # map.naver.com 경유 → pcmap.place.naver.com 직접 접근 차단 우회
+    driver.switch_to.default_content()
+    nav_url = f"https://map.naver.com/p/search/{quote(place.name)}/place/{raw_id}?placePath=%2Freview%2Fvisitor"
+    driver.get(nav_url)
+    time.sleep(2.5)
+
+    if not switch_to_iframe(driver, ["#entryIframe"]):
+        return []
+    time.sleep(1.5)
 
     wait = WebDriverWait(driver, 12)
 
