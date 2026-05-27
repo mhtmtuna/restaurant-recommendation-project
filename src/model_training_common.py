@@ -1,18 +1,23 @@
-from sklearn.ensemble import RandomForestClassifier
+import json
+import logging
+from pathlib import Path
 
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, f1_score, r2_score
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MultiLabelBinarizer, OneHotEncoder
-from model_training_common import ROOT, train_and_save
 
-MODEL_PATH = ROOT / "models" / "restaurant_recommender.joblib"
-REPORT_PATH = ROOT / "data" / "model_report.json"
-PREDICTIONS_PATH = ROOT / "data" / "restaurant_label_scores.csv"
-
+ROOT = Path(__file__).resolve().parents[1]
+FEATURES_PATH = ROOT / "data" / "restaurants_features.csv"
 
 LABEL_COLUMNS = [
-    "couple",
+    "couple_meal",
+    "couple_drink",
     "friend_meal",
     "friend_drink",
     "business_meal",
@@ -57,9 +62,7 @@ logger = logging.getLogger(__name__)
 def read_features():
     data = pd.read_csv(FEATURES_PATH)
     for col in NUMERIC_FEATURES + LABEL_COLUMNS:
-        values = pd.to_numeric(data[col], errors="coerce")
-        # 안전장치: 정상 흐름에서는 도달하지 않음.
-        data[col] = values.fillna(values.median())
+        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
     for col in CATEGORICAL_FEATURES + ["seat_type"]:
         data[col] = data[col].fillna("")
     return data
@@ -79,42 +82,22 @@ def expand_seat_type(data):
     return pd.concat([data.drop(columns=["seat_type"]), encoded_df], axis=1), list(encoded_df.columns)
 
 
-def make_pipeline(seat_columns):
+def make_pipeline(seat_columns, estimator):
     numeric_features = NUMERIC_FEATURES + seat_columns
     preprocessor = ColumnTransformer(
         transformers=[
             ("num", SimpleImputer(strategy="median"), numeric_features),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_FEATURES),
-        ]
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL_FEATURES),
+        ],
+        sparse_threshold=0.0,
     )
-    classifier = RandomForestClassifier(
-        n_estimators=200,
-        min_samples_leaf=2,
-        max_features=None,
-        random_state=42,
-        class_weight="balanced_subsample",
-    )
+    classifier = OneVsRestClassifier(estimator)
     return Pipeline(
         steps=[
             ("preprocess", preprocessor),
             ("model", classifier),
         ]
     )
-
-
-def positive_class_probabilities(model, x_data):
-    """Return an n_samples x n_labels matrix from native multi-output RF probabilities."""
-    probabilities = model.predict_proba(x_data)
-    if isinstance(probabilities, np.ndarray):
-        return probabilities
-
-    scores = np.zeros((len(x_data), len(probabilities)))
-    classes_by_label = model.named_steps["model"].classes_
-    for label_idx, label_probabilities in enumerate(probabilities):
-        positive_idx = np.flatnonzero(classes_by_label[label_idx] == 1)
-        if len(positive_idx):
-            scores[:, label_idx] = label_probabilities[:, positive_idx[0]]
-    return scores
 
 
 def multilabel_fold_indices(y_data, n_folds):
@@ -138,9 +121,12 @@ def multilabel_fold_indices(y_data, n_folds):
         positive_cols = np.flatnonzero(y_values[idx])
 
         def fold_key(fold_idx):
-            if len(positive_cols):
-                return (fold_label_counts[fold_idx, positive_cols].sum(), fold_sizes[fold_idx], fold_idx)
-            return (fold_sizes[fold_idx], fold_idx)
+            label_load = (
+                fold_label_counts[fold_idx, positive_cols].sum()
+                if len(positive_cols)
+                else fold_label_counts[fold_idx].sum()
+            )
+            return (label_load, fold_sizes[fold_idx], fold_idx)
 
         target_fold = min(range(n_folds), key=fold_key)
         folds[target_fold].append(idx)
@@ -154,12 +140,8 @@ def multilabel_fold_indices(y_data, n_folds):
         yield train_idx, val_idx
 
 
-def out_of_fold_predictions(x_data, y_data, seat_columns):
-    """Generate out-of-fold predictions using multilabel-aware folds.
-
-    Each restaurant's score comes from a model that did NOT see that
-    restaurant during training, eliminating data leakage.
-    """
+def out_of_fold_predictions(x_data, y_data, seat_columns, estimator_factory):
+    """Generate out-of-fold predictions without scoring rows seen during training."""
     n_samples = len(x_data)
     n_labels = len(LABEL_COLUMNS)
     oof_scores = np.zeros((n_samples, n_labels))
@@ -168,54 +150,34 @@ def out_of_fold_predictions(x_data, y_data, seat_columns):
     for fold_idx, (train_idx, val_idx) in enumerate(multilabel_fold_indices(y_data, N_FOLDS), start=1):
         logger.info("  fold %s/%s: train=%s, val=%s", fold_idx, N_FOLDS, len(train_idx), len(val_idx))
 
-        fold_model = make_pipeline(seat_columns)
+        fold_model = make_pipeline(seat_columns, estimator_factory())
         fold_model.fit(x_data.iloc[train_idx], y_data.iloc[train_idx])
 
-        oof_scores[val_idx] = positive_class_probabilities(fold_model, x_data.iloc[val_idx])
+        oof_scores[val_idx] = fold_model.predict_proba(x_data.iloc[val_idx])
         oof_preds[val_idx] = fold_model.predict(x_data.iloc[val_idx])
 
     return oof_scores, oof_preds
 
 
-def tune_thresholds(y_true, oof_scores, thresholds=None):
-    """Find per-label threshold that maximises F1 on OOF scores."""
-    if thresholds is None:
-        thresholds = np.arange(0.05, 0.95, 0.05)
-    y_arr = y_true.to_numpy(dtype=int)
-    optimal = {}
-    for i, label in enumerate(LABEL_COLUMNS):
-        col_scores = oof_scores[:, i]
-        col_true = y_arr[:, i]
-        best_f1, best_thresh = -1.0, 0.5
-        for t in thresholds:
-            preds = (col_scores >= t).astype(int)
-            tp = int((preds & col_true).sum())
-            fp = int((preds & (1 - col_true)).sum())
-            fn = int(((1 - preds) & col_true).sum())
-            p = tp / (tp + fp) if (tp + fp) else 0.0
-            r = tp / (tp + fn) if (tp + fn) else 0.0
-            f1 = 2 * p * r / (p + r) if (p + r) else 0.0
-            if f1 > best_f1:
-                best_f1, best_thresh = f1, float(round(t, 2))
-        optimal[label] = {"threshold": best_thresh, "f1": round(best_f1, 4)}
-    return optimal
-
-
-def build_report(y_true, y_pred, total_size):
+def build_report(model_name, y_true, y_pred, y_score, total_size):
     per_label = {}
     warnings = []
+    r2_by_label = r2_score(y_true, y_score, multioutput="raw_values")
+
     for i, label in enumerate(LABEL_COLUMNS):
         positive_count = int(y_true.iloc[:, i].sum())
         per_label[label] = {
             "positive_samples": positive_count,
             "needs_more_data": positive_count < MIN_RECOMMENDED_POSITIVES,
+            "r2_score": float(r2_by_label[i]),
         }
         if positive_count < MIN_RECOMMENDED_POSITIVES:
             warnings.append(
                 f"{label}: positive samples={positive_count}, recommended>={MIN_RECOMMENDED_POSITIVES}"
             )
 
-    report = {
+    return {
+        "model_name": model_name,
         "total_size": total_size,
         "n_folds": N_FOLDS,
         "method": "out-of-fold multilabel-aware cross validation (no data leakage)",
@@ -223,6 +185,12 @@ def build_report(y_true, y_pred, total_size):
         "label_distribution": per_label,
         "warnings": warnings,
         "warning": "; ".join(warnings),
+        "evaluation": {
+            "r2_score": float(r2_score(y_true, y_score, multioutput="uniform_average")),
+            "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+            "micro_f1": float(f1_score(y_true, y_pred, average="micro", zero_division=0)),
+            "samples_f1": float(f1_score(y_true, y_pred, average="samples", zero_division=0)),
+        },
         "classification_report": classification_report(
             y_true,
             y_pred,
@@ -231,10 +199,9 @@ def build_report(y_true, y_pred, total_size):
             output_dict=True,
         ),
     }
-    return report
 
 
-def main():
+def train_and_save(model_name, estimator_factory, model_path, report_path, predictions_path):
     data = read_features()
     data, seat_columns = expand_seat_type(data)
 
@@ -244,6 +211,7 @@ def main():
     if len(data) < 10:
         raise ValueError("Need at least 10 restaurants to train a baseline model.")
 
+    logger.info("model: %s", model_name)
     logger.info("dataset: %s restaurants", len(data))
     logger.info("label distribution:")
     for label in LABEL_COLUMNS:
@@ -251,36 +219,29 @@ def main():
         logger.info("  %s: %s positive (%.1f%%)", label, pos, pos / len(data) * 100)
 
     logger.info("\ngenerating out-of-fold predictions (%s-fold)...", N_FOLDS)
-    oof_scores, oof_preds = out_of_fold_predictions(x_data, y_data, seat_columns)
+    oof_scores, oof_preds = out_of_fold_predictions(x_data, y_data, seat_columns, estimator_factory)
 
-    logger.info("\ntuning per-label thresholds...")
-    optimal_thresholds = tune_thresholds(y_data, oof_scores)
-    tuned_preds = np.stack(
-        [(oof_scores[:, i] >= optimal_thresholds[label]["threshold"]).astype(int)
-         for i, label in enumerate(LABEL_COLUMNS)],
-        axis=1,
-    )
-
-    report = build_report(y_data, tuned_preds, len(data))
-    report["optimal_thresholds"] = optimal_thresholds
+    report = build_report(model_name, y_data, oof_preds, oof_scores, len(data))
 
     logger.info("\ntraining final model on all data...")
-    model = make_pipeline(seat_columns)
+    model = make_pipeline(seat_columns, estimator_factory())
     model.fit(x_data, y_data)
 
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
         {
             "model": model,
+            "model_name": model_name,
             "label_columns": LABEL_COLUMNS,
             "numeric_features": NUMERIC_FEATURES,
             "categorical_features": CATEGORICAL_FEATURES,
             "seat_columns": seat_columns,
         },
-        MODEL_PATH,
+        model_path,
     )
 
-    with REPORT_PATH.open("w", encoding="utf-8") as f:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with report_path.open("w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     scores_df = pd.DataFrame(oof_scores, columns=[f"{label}_score" for label in LABEL_COLUMNS])
@@ -291,48 +252,31 @@ def main():
         ],
         axis=1,
     )
-    output.to_csv(PREDICTIONS_PATH, index=False, encoding="utf-8-sig")
+    predictions_path.parent.mkdir(parents=True, exist_ok=True)
+    output.to_csv(predictions_path, index=False, encoding="utf-8-sig")
 
-    logger.info("\nsaved model: %s", MODEL_PATH)
-    logger.info("saved report: %s", REPORT_PATH)
-    logger.info("saved scores: %s", PREDICTIONS_PATH)
+    logger.info("\nsaved model: %s", model_path)
+    logger.info("saved report: %s", report_path)
+    logger.info("saved scores: %s", predictions_path)
+    logger.info("r2 score: %.4f", report["evaluation"]["r2_score"])
+    logger.info("macro f1: %.4f", report["evaluation"]["macro_f1"])
 
-    logger.info("\n--- classification report (out-of-fold, tuned thresholds) ---")
+    logger.info("\n--- classification report (out-of-fold) ---")
     cr = report["classification_report"]
     for label in LABEL_COLUMNS:
         metrics = cr[label]
         dist = report["label_distribution"][label]
-        thresh = optimal_thresholds[label]["threshold"]
         logger.info(
-            "  %-20s  P=%.2f  R=%.2f  F1=%.2f  (positive=%s, threshold=%.2f)",
+            "  %-20s  P=%.2f  R=%.2f  F1=%.2f  R2=%.2f  (positive=%s)",
             label,
             metrics["precision"],
             metrics["recall"],
             metrics["f1-score"],
+            dist["r2_score"],
             dist["positive_samples"],
-            thresh,
         )
 
     if report["warning"]:
         logger.warning("\nwarning: %s", report["warning"])
 
-def estimator_factory():
-    return RandomForestClassifier(
-        n_estimators=200,
-        min_samples_leaf=2,
-        random_state=42,
-        class_weight="balanced_subsample",
-    )
-
-
-def main():
-    train_and_save(
-        model_name="random_forest",
-        estimator_factory=estimator_factory,
-        model_path=MODEL_PATH,
-        report_path=REPORT_PATH,
-        predictions_path=PREDICTIONS_PATH,
-    )
-
-if __name__ == "__main__":
-    main()
+    return report

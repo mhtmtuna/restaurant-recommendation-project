@@ -1,0 +1,116 @@
+{
+  "model_name": "adaboost",
+  "total_size": 347,
+  "n_folds": 5,
+  "method": "out-of-fold multilabel-aware cross validation (no data leakage)",
+  "labels": [
+    "couple_meal",
+    "couple_drink",
+    "friend_meal",
+    "friend_drink",
+    "business_meal",
+    "business_drink"
+  ],
+  "label_distribution": {
+    "couple_meal": {
+      "positive_samples": 149,
+      "needs_more_data": false,
+      "r2_score": 0.5469076468332643
+    },
+    "couple_drink": {
+      "positive_samples": 256,
+      "needs_more_data": false,
+      "r2_score": 0.1291519128457087
+    },
+    "friend_meal": {
+      "positive_samples": 40,
+      "needs_more_data": false,
+      "r2_score": -0.6425905236704976
+    },
+    "friend_drink": {
+      "positive_samples": 40,
+      "needs_more_data": false,
+      "r2_score": -0.7078540319334823
+    },
+    "business_meal": {
+      "positive_samples": 51,
+      "needs_more_data": false,
+      "r2_score": -0.2569090753513328
+    },
+    "business_drink": {
+      "positive_samples": 37,
+      "needs_more_data": false,
+      "r2_score": -0.4179757987309427
+    }
+  },
+  "warnings": [],
+  "warning": "",
+  "evaluation": {
+    "r2_score": -0.2248783116678804,
+    "macro_f1": 0.5244633994923279,
+    "micro_f1": 0.7416137805983681,
+    "samples_f1": 0.5559967729996549
+  },
+  "classification_report": {
+    "couple_meal": {
+      "precision": 0.9530201342281879,
+      "recall": 0.9530201342281879,
+      "f1-score": 0.9530201342281879,
+      "support": 149.0
+    },
+    "couple_drink": {
+      "precision": 0.7711267605633803,
+      "recall": 0.85546875,
+      "f1-score": 0.8111111111111111,
+      "support": 256.0
+    },
+    "friend_meal": {
+      "precision": 0.3888888888888889,
+      "recall": 0.175,
+      "f1-score": 0.2413793103448276,
+      "support": 40.0
+    },
+    "friend_drink": {
+      "precision": 0.2,
+      "recall": 0.1,
+      "f1-score": 0.13333333333333333,
+      "support": 40.0
+    },
+    "business_meal": {
+      "precision": 0.6363636363636364,
+      "recall": 0.4117647058823529,
+      "f1-score": 0.5,
+      "support": 51.0
+    },
+    "business_drink": {
+      "precision": 0.6153846153846154,
+      "recall": 0.43243243243243246,
+      "f1-score": 0.5079365079365079,
+      "support": 37.0
+    },
+    "micro avg": {
+      "precision": 0.7716981132075472,
+      "recall": 0.7137870855148342,
+      "f1-score": 0.7416137805983681,
+      "support": 573.0
+    },
+    "macro avg": {
+      "precision": 0.5941306725714515,
+      "recall": 0.48794767042382886,
+      "f1-score": 0.5244633994923279,
+      "support": 573.0
+    },
+    "weighted avg": {
+      "precision": 0.7298216099189478,
+      "recall": 0.7137870855148342,
+      "f1-score": 0.7136589895030045,
+      "support": 573.0
+    },
+    "samples avg": {
+      "precision": 0.593611911623439,
+      "recall": 0.5459654178674351,
+      "f1-score": 0.5559967729996549,
+      "support": 573.0
+    }
+  }
+}
