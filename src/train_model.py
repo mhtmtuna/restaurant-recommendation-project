@@ -146,12 +146,9 @@ def multilabel_fold_indices(y_data, n_folds):
         positive_cols = np.flatnonzero(y_values[idx])
 
         def fold_key(fold_idx):
-            label_load = (
-                fold_label_counts[fold_idx, positive_cols].sum()
-                if len(positive_cols)
-                else fold_label_counts[fold_idx].sum()
-            )
-            return (label_load, fold_sizes[fold_idx], fold_idx)
+            if len(positive_cols):
+                return (fold_label_counts[fold_idx, positive_cols].sum(), fold_sizes[fold_idx], fold_idx)
+            return (fold_sizes[fold_idx], fold_idx)
 
         target_fold = min(range(n_folds), key=fold_key)
         folds[target_fold].append(idx)
@@ -186,6 +183,30 @@ def out_of_fold_predictions(x_data, y_data, seat_columns):
         oof_preds[val_idx] = fold_model.predict(x_data.iloc[val_idx])
 
     return oof_scores, oof_preds
+
+
+def tune_thresholds(y_true, oof_scores, thresholds=None):
+    """Find per-label threshold that maximises F1 on OOF scores."""
+    if thresholds is None:
+        thresholds = np.arange(0.05, 0.95, 0.05)
+    y_arr = y_true.to_numpy(dtype=int)
+    optimal = {}
+    for i, label in enumerate(LABEL_COLUMNS):
+        col_scores = oof_scores[:, i]
+        col_true = y_arr[:, i]
+        best_f1, best_thresh = -1.0, 0.5
+        for t in thresholds:
+            preds = (col_scores >= t).astype(int)
+            tp = int((preds & col_true).sum())
+            fp = int((preds & (1 - col_true)).sum())
+            fn = int(((1 - preds) & col_true).sum())
+            p = tp / (tp + fp) if (tp + fp) else 0.0
+            r = tp / (tp + fn) if (tp + fn) else 0.0
+            f1 = 2 * p * r / (p + r) if (p + r) else 0.0
+            if f1 > best_f1:
+                best_f1, best_thresh = f1, float(round(t, 2))
+        optimal[label] = {"threshold": best_thresh, "f1": round(best_f1, 4)}
+    return optimal
 
 
 def build_report(y_true, y_pred, total_size):
@@ -240,7 +261,16 @@ def main():
     logger.info("\ngenerating out-of-fold predictions (%s-fold)...", N_FOLDS)
     oof_scores, oof_preds = out_of_fold_predictions(x_data, y_data, seat_columns)
 
-    report = build_report(y_data, oof_preds, len(data))
+    logger.info("\ntuning per-label thresholds...")
+    optimal_thresholds = tune_thresholds(y_data, oof_scores)
+    tuned_preds = np.stack(
+        [(oof_scores[:, i] >= optimal_thresholds[label]["threshold"]).astype(int)
+         for i, label in enumerate(LABEL_COLUMNS)],
+        axis=1,
+    )
+
+    report = build_report(y_data, tuned_preds, len(data))
+    report["optimal_thresholds"] = optimal_thresholds
 
     logger.info("\ntraining final model on all data...")
     model = make_pipeline(seat_columns)
@@ -275,18 +305,20 @@ def main():
     logger.info("saved report: %s", REPORT_PATH)
     logger.info("saved scores: %s", PREDICTIONS_PATH)
 
-    logger.info("\n--- classification report (out-of-fold) ---")
+    logger.info("\n--- classification report (out-of-fold, tuned thresholds) ---")
     cr = report["classification_report"]
     for label in LABEL_COLUMNS:
         metrics = cr[label]
         dist = report["label_distribution"][label]
+        thresh = optimal_thresholds[label]["threshold"]
         logger.info(
-            "  %-20s  P=%.2f  R=%.2f  F1=%.2f  (positive=%s)",
+            "  %-20s  P=%.2f  R=%.2f  F1=%.2f  (positive=%s, threshold=%.2f)",
             label,
             metrics["precision"],
             metrics["recall"],
             metrics["f1-score"],
             dist["positive_samples"],
+            thresh,
         )
 
     if report["warning"]:
