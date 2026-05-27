@@ -18,8 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 LABEL_COLUMNS_LIST = [
-    "couple_meal",
-    "couple_drink",
+    "couple",
     "friend_meal",
     "friend_drink",
     "business_meal",
@@ -27,8 +26,8 @@ LABEL_COLUMNS_LIST = [
 ]
 
 LABEL_COLUMNS = {
-    "연인_식사": "couple_meal_score",
-    "연인_술자리": "couple_drink_score",
+    "연인_식사": "couple_score",
+    "연인_술자리": "couple_score",
     "친구_식사": "friend_meal_score",
     "친구_술자리": "friend_drink_score",
     "비즈니스_식사": "business_meal_score",
@@ -616,8 +615,8 @@ HTML = r"""
     const restaurants = __RESTAURANTS__;
     const dataStatus = __DATA_STATUS__;
     const labelMap = {
-      "연인_식사": "couple_meal_score",
-      "연인_술자리": "couple_drink_score",
+      "연인_식사": "couple_score",
+      "연인_술자리": "couple_score",
       "친구_식사": "friend_meal_score",
       "친구_술자리": "friend_drink_score",
       "비즈니스_식사": "business_meal_score",
