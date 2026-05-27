@@ -1,15 +1,7 @@
 {
   "ranking_metric": "r2_score",
-  "best_model": "random_forest",
+  "best_model": "catboost",
   "models": [
-    {
-      "model_name": "random_forest",
-      "report_path": "data\\model_report.json",
-      "r2_score": 0.3099977309943129,
-      "macro_f1": 0.5116095818644858,
-      "micro_f1": 0.7614593077642656,
-      "samples_f1": 0.5617126389460684
-    },
     {
       "model_name": "catboost",
       "report_path": "data\\model_report_catboost.json",
@@ -17,6 +9,14 @@
       "macro_f1": 0.5558900653496034,
       "micro_f1": 0.7658802177858439,
       "samples_f1": 0.5696250275500996
+    },
+    {
+      "model_name": "random_forest",
+      "report_path": "data\\model_report.json",
+      "r2_score": -0.011566655591831098,
+      "macro_f1": 0.006349206349206349,
+      "micro_f1": 0.011834319526627219,
+      "samples_f1": 0.0008261049153242461
     },
     {
       "model_name": "adaboost",
