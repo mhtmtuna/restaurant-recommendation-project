@@ -708,6 +708,7 @@ HTML = r"""
       if (includesAny(text, ["여자친구", "남자친구", "연인", "데이트", "애인"])) {
         parsed.relation = "연인";
         parsed.partySize = 2;
+        parsed.genderMix = "반반";
         romanticMentioned = true;
       } else if (includesAny(text, ["회사", "상사", "팀장", "미팅", "비즈니스", "회식", "거래처", "직장"])) {
         parsed.relation = "비즈니스";
