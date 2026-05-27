@@ -701,7 +701,7 @@ HTML = r"""
       else if (text.includes("건대")) parsed.area = "건대";
       else if (text.includes("잠실")) parsed.area = "잠실";
       else {
-        warnings.push("지역이 인식되지 않았어요. 기본값(강남)이 적용됩니다.");
+        warnings.push("지역이 인식되지 않았어요. 현재 선택된 지역이 유지됩니다.");
       }
 
       /* 관계 */
