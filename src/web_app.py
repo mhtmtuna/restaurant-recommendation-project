@@ -641,10 +641,10 @@ HTML = r"""
 
     /* ── #7 fix: parsePartySize ── */
     function parsePartySize(text) {
-      const totalMatch = text.match(/총\s*(\d+)\s*명/);
+      const totalMatch = text.match(/총[^0-9]*(\d+)\s*명/);
       if (totalMatch) return Number(totalMatch[1]);
 
-      const totalMatch2 = text.match(/총\s*(\d+)\s*인/);
+      const totalMatch2 = text.match(/총[^0-9]*(\d+)\s*인/);
       if (totalMatch2) return Number(totalMatch2[1]);
 
       const genderPattern = text.match(
@@ -872,6 +872,14 @@ HTML = r"""
       return { score: Math.min(score, 1), reasons };
     }
 
+    const DRINK_CATEGORIES = ["술집", "이자카야", "호프/통닭"];
+
+    function matchesCategory(item, category) {
+      if (category === "상관없음") return true;
+      if (category === "주점 바") return DRINK_CATEGORIES.includes(item.category);
+      return item.category === category;
+    }
+
     function recommend() {
       const area = $("area").value;
       const relation = $("relation").value;
@@ -885,7 +893,7 @@ HTML = r"""
 
       const results = restaurants
         .filter((item) => item.area === area)
-        .filter((item) => category === "상관없음" || item.category === category)
+        .filter((item) => matchesCategory(item, category))
         .map((item) => ({ ...item, ...scoreRestaurant(item, scoreColumn, partySize, atmosphere, priority) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 10);
