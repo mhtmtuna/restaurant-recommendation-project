@@ -1,0 +1,99 @@
+{
+  "overall_top15": {
+    "noise_mentions": 0.405298,
+    "rating": 0.185412,
+    "brightness_mentions": 0.159591,
+    "taste_mentions": 0.120019,
+    "collected_review_count": 0.047864,
+    "review_count": 0.046541,
+    "seat_group": 0.011243,
+    "category_분식": 0.007042,
+    "price": 0.005166,
+    "value_confidence": 0.003182,
+    "photo_ratio": 0.003119,
+    "taste_score": 0.001805,
+    "category_카페 디저트": 0.001106,
+    "value_mentions": 0.000961,
+    "taste_confidence": 0.000326
+  },
+  "category_contribution_pct": {
+    "metadata": 28.8,
+    "taste/value": 12.7,
+    "atmosphere": 56.5,
+    "location/seat": 2.0
+  },
+  "per_label": {
+    "couple_meal": {
+      "noise_mentions": 0.7735686518364632,
+      "rating": 0.2130738298673908,
+      "value_confidence": 0.00612501935361647,
+      "collected_review_count": 0.0021025250336285796,
+      "brightness_mentions": 0.0018049058625983563,
+      "review_count": 0.0014377505241869966,
+      "category_카페 디저트": 0.0007038558388236406,
+      "taste_mentions": 0.0005551350082196059,
+      "value_mentions": 0.0004646979594663336,
+      "portion_mentions": 6.194800303441754e-05
+    },
+    "couple_drink": {
+      "rating": 0.8963445920594773,
+      "category_분식": 0.04224742695650617,
+      "taste_mentions": 0.020060727706670983,
+      "value_confidence": 0.012949059496253966,
+      "photo_ratio": 0.009080176750167462,
+      "brightness_mentions": 0.006141650194203365,
+      "collected_review_count": 0.0022629561926517075,
+      "noise_mentions": 0.0018857492504931307,
+      "taste_confidence": 0.0018718559357473452,
+      "category_이자카야": 0.0017046202533904432
+    },
+    "friend_meal": {
+      "brightness_mentions": 0.9480173176298065,
+      "price": 0.028411565758953622,
+      "review_count": 0.019811618587973395,
+      "value_mentions": 0.0013675944224633462,
+      "rating": 0.0007443371844818425,
+      "value_score": 0.0005233825231041844,
+      "noise_mentions": 0.0003818923695120651,
+      "photo_ratio": 0.00033888088573041795,
+      "taste_mentions": 0.0002913688794074889,
+      "collected_review_count": 3.6063001197251584e-05
+    },
+    "friend_drink": {
+      "taste_mentions": 0.699167176491431,
+      "collected_review_count": 0.2815561353671971,
+      "photo_ratio": 0.008883326745040443,
+      "taste_score": 0.00874363333907328,
+      "review_count": 0.0005701148636512882,
+      "noise_score": 0.00043103425895286545,
+      "price": 0.0003410782277923191,
+      "value_mentions": 0.00013426887728320452,
+      "seat_floor": 6.361377669199786e-05,
+      "noise_mentions": 6.264215016983413e-05
+    },
+    "business_meal": {
+      "noise_mentions": 0.7425137540623278,
+      "review_count": 0.24512099284598549,
+      "category_카페 디저트": 0.005931481217889484,
+      "value_mentions": 0.002237491495433258,
+      "brightness_mentions": 0.001576422359826253,
+      "taste_score": 0.0013012195319756148,
+      "price": 0.0005773906902701868,
+      "rating": 0.00027837353754762,
+      "value_score": 0.0001644474906117825,
+      "collected_review_count": 0.00015681339766050143
+    },
+    "business_drink": {
+      "noise_mentions": 0.9133738358772224,
+      "seat_group": 0.06744387707643297,
+      "review_count": 0.01091176785770034,
+      "rating": 0.0020260383744020514,
+      "value_mentions": 0.0015440407469756,
+      "collected_review_count": 0.0010670411868100049,
+      "spaciousness_confidence": 0.0010040144384673483,
+      "portion_score": 0.0008153912009715921,
+      "price": 0.0006454530687197743,
+      "photo_ratio": 0.0004034309351422454
+    }
+  }
+}

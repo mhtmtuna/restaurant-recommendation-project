@@ -340,8 +340,31 @@ def build_features(raw_rows, keywords):
 
         rows.append(row)
 
+    apply_couple_feature_rule(rows)
     apply_bayesian_shrinkage(rows)
     return rows
+
+
+def apply_couple_feature_rule(rows):
+    """키워드 미매칭 식당 중 분위기 피처로 couple 보완 라벨링.
+
+    조건: 2인석/창가 자석 있음 AND (조용한 분위기 OR 어두운 조명)
+    noise_score 낮음 = 조용함, brightness_score 낮음 = 어두운/감성적 조명.
+    """
+    for row in rows:
+        if row.get("couple") == 1:
+            continue
+        has_couple_seat = "couple" in str(row.get("seat_type", ""))
+        noise = to_float(row.get("noise_score"))
+        brightness = to_float(row.get("brightness_score"))
+        noise_mentions = int(to_float(row.get("noise_mentions", 0)) or 0)
+        brightness_mentions = int(to_float(row.get("brightness_mentions", 0)) or 0)
+
+        quiet = noise is not None and noise < 0.45 and noise_mentions >= 2
+        dark = brightness is not None and brightness < 0.45 and brightness_mentions >= 2
+
+        if has_couple_seat and (quiet or dark):
+            row["couple"] = 1
 
 
 def write_features(rows):

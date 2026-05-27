@@ -1,0 +1,178 @@
+{
+  "RandomForest": {
+    "train_time_sec": 4.7,
+    "macro_f1": 0.1911,
+    "per_label": {
+      "couple_meal": {
+        "precision": 0.1176,
+        "recall": 0.56,
+        "f1": 0.1944
+      },
+      "couple_drink": {
+        "precision": 0.1176,
+        "recall": 0.56,
+        "f1": 0.1944
+      },
+      "friend_meal": {
+        "precision": 0.1397,
+        "recall": 0.4043,
+        "f1": 0.2077
+      },
+      "friend_drink": {
+        "precision": 0.2564,
+        "recall": 0.3279,
+        "f1": 0.2878
+      },
+      "business_meal": {
+        "precision": 0.1081,
+        "recall": 0.2353,
+        "f1": 0.1481
+      },
+      "business_drink": {
+        "precision": 0.0909,
+        "recall": 0.1538,
+        "f1": 0.1143
+      }
+    },
+    "optimal_thresholds": {
+      "couple_meal": 0.1,
+      "couple_drink": 0.1,
+      "friend_meal": 0.15,
+      "friend_drink": 0.25,
+      "business_meal": 0.15,
+      "business_drink": 0.15
+    }
+  },
+  "XGBoost": {
+    "train_time_sec": 2.3,
+    "macro_f1": 0.1632,
+    "per_label": {
+      "couple_meal": {
+        "precision": 0.1579,
+        "recall": 0.12,
+        "f1": 0.1364
+      },
+      "couple_drink": {
+        "precision": 0.1579,
+        "recall": 0.12,
+        "f1": 0.1364
+      },
+      "friend_meal": {
+        "precision": 0.2462,
+        "recall": 0.3404,
+        "f1": 0.2857
+      },
+      "friend_drink": {
+        "precision": 0.1963,
+        "recall": 0.3443,
+        "f1": 0.25
+      },
+      "business_meal": {
+        "precision": 0.0857,
+        "recall": 0.1765,
+        "f1": 0.1154
+      },
+      "business_drink": {
+        "precision": 0.0435,
+        "recall": 0.0769,
+        "f1": 0.0556
+      }
+    },
+    "optimal_thresholds": {
+      "couple_meal": 0.35,
+      "couple_drink": 0.35,
+      "friend_meal": 0.15,
+      "friend_drink": 0.15,
+      "business_meal": 0.05,
+      "business_drink": 0.1
+    }
+  },
+  "CatBoost": {
+    "train_time_sec": 8.1,
+    "macro_f1": 0.1685,
+    "per_label": {
+      "couple_meal": {
+        "precision": 0.1395,
+        "recall": 0.24,
+        "f1": 0.1765
+      },
+      "couple_drink": {
+        "precision": 0.1395,
+        "recall": 0.24,
+        "f1": 0.1765
+      },
+      "friend_meal": {
+        "precision": 0.131,
+        "recall": 0.4043,
+        "f1": 0.1979
+      },
+      "friend_drink": {
+        "precision": 0.186,
+        "recall": 0.3934,
+        "f1": 0.2526
+      },
+      "business_meal": {
+        "precision": 0.1034,
+        "recall": 0.3529,
+        "f1": 0.16
+      },
+      "business_drink": {
+        "precision": 0.0345,
+        "recall": 0.0769,
+        "f1": 0.0476
+      }
+    },
+    "optimal_thresholds": {
+      "couple_meal": 0.15,
+      "couple_drink": 0.15,
+      "friend_meal": 0.1,
+      "friend_drink": 0.15,
+      "business_meal": 0.1,
+      "business_drink": 0.2
+    }
+  },
+  "LightGBM": {
+    "train_time_sec": 3.2,
+    "macro_f1": 0.1481,
+    "per_label": {
+      "couple_meal": {
+        "precision": 0.125,
+        "recall": 0.24,
+        "f1": 0.1644
+      },
+      "couple_drink": {
+        "precision": 0.125,
+        "recall": 0.24,
+        "f1": 0.1644
+      },
+      "friend_meal": {
+        "precision": 0.25,
+        "recall": 0.2766,
+        "f1": 0.2626
+      },
+      "friend_drink": {
+        "precision": 0.2065,
+        "recall": 0.3115,
+        "f1": 0.2484
+      },
+      "business_meal": {
+        "precision": 0.0417,
+        "recall": 0.0588,
+        "f1": 0.0488
+      },
+      "business_drink": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "optimal_thresholds": {
+      "couple_meal": 0.05,
+      "couple_drink": 0.05,
+      "friend_meal": 0.2,
+      "friend_drink": 0.2,
+      "business_meal": 0.05,
+      "business_drink": 0.05
+    }
+  }
+}

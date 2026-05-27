@@ -354,12 +354,12 @@ def collect_place_reviews(driver, place, area, category, review_limit):
 
 def write_rows(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path = path.with_name(f"{path.name}.{time.time_ns()}.tmp")
     with temp_path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
-    temp_path.replace(path)
+    replace_with_retry(temp_path, path)
 
 
 def append_error(row):
@@ -381,12 +381,27 @@ def read_statuses():
 
 def write_statuses(statuses):
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = STATUS_PATH.with_suffix(STATUS_PATH.suffix + ".tmp")
+    temp_path = STATUS_PATH.with_name(f"{STATUS_PATH.name}.{time.time_ns()}.tmp")
     with temp_path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=STATUS_FIELDNAMES)
         writer.writeheader()
         writer.writerows(statuses.values())
-    temp_path.replace(STATUS_PATH)
+    replace_with_retry(temp_path, STATUS_PATH)
+
+
+def replace_with_retry(temp_path, target_path, attempts=5):
+    for attempt in range(attempts):
+        try:
+            temp_path.replace(target_path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.5)
+        except FileNotFoundError:
+            if target_path.exists():
+                return
+            raise
 
 
 def status_for_count(collected_count, target_count):

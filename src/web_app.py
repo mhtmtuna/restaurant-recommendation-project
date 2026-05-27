@@ -18,8 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 LABEL_COLUMNS_LIST = [
-    "couple_meal",
-    "couple_drink",
+    "couple",
     "friend_meal",
     "friend_drink",
     "business_meal",
@@ -27,8 +26,8 @@ LABEL_COLUMNS_LIST = [
 ]
 
 LABEL_COLUMNS = {
-    "연인_식사": "couple_meal_score",
-    "연인_술자리": "couple_drink_score",
+    "연인_식사": "couple_score",
+    "연인_술자리": "couple_score",
     "친구_식사": "friend_meal_score",
     "친구_술자리": "friend_drink_score",
     "비즈니스_식사": "business_meal_score",
@@ -616,8 +615,8 @@ HTML = r"""
     const restaurants = __RESTAURANTS__;
     const dataStatus = __DATA_STATUS__;
     const labelMap = {
-      "연인_식사": "couple_meal_score",
-      "연인_술자리": "couple_drink_score",
+      "연인_식사": "couple_score",
+      "연인_술자리": "couple_score",
       "친구_식사": "friend_meal_score",
       "친구_술자리": "friend_drink_score",
       "비즈니스_식사": "business_meal_score",
@@ -641,10 +640,10 @@ HTML = r"""
 
     /* ── #7 fix: parsePartySize ── */
     function parsePartySize(text) {
-      const totalMatch = text.match(/총\s*(\d+)\s*명/);
+      const totalMatch = text.match(/총[^0-9]*(\d+)\s*명/);
       if (totalMatch) return Number(totalMatch[1]);
 
-      const totalMatch2 = text.match(/총\s*(\d+)\s*인/);
+      const totalMatch2 = text.match(/총[^0-9]*(\d+)\s*인/);
       if (totalMatch2) return Number(totalMatch2[1]);
 
       const genderPattern = text.match(
@@ -656,8 +655,7 @@ HTML = r"""
       }
 
       const numberMatches = [...text.matchAll(/(\d+)\s*명/g)].map((m) => Number(m[1]));
-      if (numberMatches.length > 1) return numberMatches.reduce((a, b) => a + b, 0);
-      if (numberMatches.length === 1) return numberMatches[0];
+      if (numberMatches.length >= 1) return numberMatches[numberMatches.length - 1];
 
       const personMatches = [...text.matchAll(/(\d+)\s*인/g)].map((m) => Number(m[1]));
       if (personMatches.length === 1) return personMatches[0];
@@ -702,7 +700,7 @@ HTML = r"""
       else if (text.includes("건대")) parsed.area = "건대";
       else if (text.includes("잠실")) parsed.area = "잠실";
       else {
-        warnings.push("지역이 인식되지 않았어요. 기본값(강남)이 적용됩니다.");
+        warnings.push("지역이 인식되지 않았어요. 현재 선택된 지역이 유지됩니다.");
       }
 
       /* 관계 */
@@ -710,6 +708,7 @@ HTML = r"""
       if (includesAny(text, ["여자친구", "남자친구", "연인", "데이트", "애인"])) {
         parsed.relation = "연인";
         parsed.partySize = 2;
+        parsed.genderMix = "반반";
         romanticMentioned = true;
       } else if (includesAny(text, ["회사", "상사", "팀장", "미팅", "비즈니스", "회식", "거래처", "직장"])) {
         parsed.relation = "비즈니스";
@@ -718,12 +717,14 @@ HTML = r"""
       }
 
       /* 상황 (#9: "괜찮은 데", "좋은 데" 등 추가) */
-      if (includesAny(text, ["술", "한잔", "맥주", "소주", "와인", "칵테일", "2차", "소맥", "포차", "치맥"])) {
+      if (includesAny(text, ["술", "한잔", "맥주", "소주", "와인", "칵테일", "2차", "소맥", "포차", "치맥",
+                             "술집", "주점", "이자카야", "호프", "맥주집", "와인바"])) {
         parsed.occasion = "술자리";
       } else if (includesAny(text, [
         "밥", "식사", "저녁", "점심", "먹", "식당", "맛집", "아침",
         "브런치", "런치", "디너", "괜찮은 데", "좋은 데", "갈만한 데",
-        "먹을 데", "먹을만한", "추천해"
+        "먹을 데", "먹을만한", "추천해",
+        "카페", "커피", "디저트"
       ])) {
         parsed.occasion = "식사";
       }
@@ -872,6 +873,14 @@ HTML = r"""
       return { score: Math.min(score, 1), reasons };
     }
 
+    const DRINK_CATEGORIES = ["술집", "이자카야", "호프/통닭"];
+
+    function matchesCategory(item, category) {
+      if (category === "상관없음") return true;
+      if (category === "주점 바") return DRINK_CATEGORIES.includes(item.category);
+      return item.category === category;
+    }
+
     function recommend() {
       const area = $("area").value;
       const relation = $("relation").value;
@@ -885,7 +894,7 @@ HTML = r"""
 
       const results = restaurants
         .filter((item) => item.area === area)
-        .filter((item) => category === "상관없음" || item.category === category)
+        .filter((item) => matchesCategory(item, category))
         .map((item) => ({ ...item, ...scoreRestaurant(item, scoreColumn, partySize, atmosphere, priority) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 10);
