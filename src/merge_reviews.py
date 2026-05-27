@@ -37,7 +37,7 @@ def main():
     # 카카오맵(기존) + 추가 소스만 병합 (백업·샘플 파일 제외)
     candidates = [
         DATA_DIR / "raw_reviews.csv",
-        DATA_DIR / "raw_reviews_mangoplate.csv",
+        DATA_DIR / "raw_reviews_naver.csv",
     ]
     sources = [p for p in candidates if p.exists()]
     if not sources:

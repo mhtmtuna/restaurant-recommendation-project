@@ -1,10 +1,17 @@
 """
-망고플레이트 리뷰 크롤러
-- 출력 포맷: raw_reviews.csv 와 동일 (restaurant_id, restaurant_name, area, category,
-  rating, review_count, price, photo_ratio, review_text)
-- 수집 결과: data/raw_reviews_mangoplate.csv
-- 진행 상태: data/crawl_status_mangoplate.csv  (중단 후 재시작 가능)
-- 에러 로그: data/crawl_errors_mangoplate.csv
+네이버 플레이스 방문자 리뷰 크롤러
+
+카카오맵보다 "데이트로 왔어요", "친구들이랑", "회식 자리" 같은
+관계 맥락 표현이 많아 모델 positive sample 증가가 목적.
+
+출력 포맷: raw_reviews.csv 와 동일
+  restaurant_id, restaurant_name, area, category,
+  rating, review_count, price, photo_ratio, review_text
+
+결과 파일:
+  data/raw_reviews_naver.csv        ← 수집 결과
+  data/crawl_status_naver.csv       ← 진행 상태 (재시작용)
+  data/crawl_errors_naver.csv       ← 에러 로그
 """
 
 import argparse
@@ -14,7 +21,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 from selenium import webdriver
 from selenium.common.exceptions import (
@@ -32,10 +39,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN_PATH = ROOT / "config" / "sampling_plan.json"
-OUTPUT_PATH = ROOT / "data" / "raw_reviews_mangoplate.csv"
-STATUS_PATH = ROOT / "data" / "crawl_status_mangoplate.csv"
-ERRORS_PATH = ROOT / "data" / "crawl_errors_mangoplate.csv"
-BASE_URL = "https://www.mangoplate.com"
+OUTPUT_PATH = ROOT / "data" / "raw_reviews_naver.csv"
+STATUS_PATH = ROOT / "data" / "crawl_status_naver.csv"
+ERRORS_PATH = ROOT / "data" / "crawl_errors_naver.csv"
+
+# 네이버 플레이스 URL
+SEARCH_URL = "https://map.naver.com/p/search/{query}"
+REVIEW_URL = "https://pcmap.place.naver.com/restaurant/{place_id}/review/visitor"
 
 FIELDNAMES = [
     "restaurant_id", "restaurant_name", "area", "category",
@@ -47,17 +57,17 @@ STATUS_FIELDNAMES = [
 ]
 ERROR_FIELDNAMES = ["area", "category", "restaurant_id", "restaurant_name", "stage", "error"]
 
-# 망고플레이트 카카오 카테고리 → 검색 키워드 매핑
+# 카카오맵 카테고리 → 네이버 검색 키워드
 CATEGORY_SEARCH = {
-    "한식": "한식",
-    "일식": "일식",
-    "중식": "중식",
-    "양식": "양식",
-    "술집": "술집",
-    "치킨": "치킨",
-    "분식": "분식",
-    "이자카야": "이자카야",
-    "고깃집": "고기",
+    "한식":     "한식",
+    "일식":     "일식",
+    "중식":     "중식",
+    "양식":     "양식",
+    "술집":     "술집",
+    "치킨":     "치킨",
+    "분식":     "분식",
+    "이자카야":  "이자카야",
+    "고깃집":   "고깃집",
     "호프/통닭": "호프",
     "카페 디저트": "카페",
 }
@@ -67,7 +77,6 @@ CATEGORY_SEARCH = {
 class Place:
     place_id: str
     name: str
-    url: str
     rating: str = ""
     review_count: str = ""
 
@@ -79,19 +88,24 @@ def make_driver(headless=True):
     if headless:
         options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
-    options.add_argument("--lang=ko-KR")
-    options.add_argument("--window-size=1400,1000")
+    options.add_argument("--lang=ko-KR,ko")
+    options.add_argument("--window-size=1400,900")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
     options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     )
-    return webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(options=options)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    return driver
 
 
 def safe_click(driver, element):
-    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
     time.sleep(0.3)
     try:
         element.click()
@@ -106,145 +120,151 @@ def digits(text):
     return m.group(0).replace(",", "") if m else ""
 
 
-def extract_place_id(url):
-    m = re.search(r"/restaurants/([^/?#]+)", url)
-    return f"mp_{m.group(1)}" if m else f"mp_{re.sub(r'[^a-zA-Z0-9]', '_', url)[-30:]}"
-
-
-def text_first(elements, selectors):
+def switch_to_iframe(driver, selectors, timeout=10):
+    """iframe 전환. 실패하면 False 반환."""
+    wait = WebDriverWait(driver, timeout)
     for sel in selectors:
-        els = elements.find_elements(By.CSS_SELECTOR, sel)
-        if els:
-            t = els[0].text.strip()
-            if t:
-                return t
-    return ""
+        try:
+            frame = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
+            driver.switch_to.frame(frame)
+            return True
+        except TimeoutException:
+            continue
+    return False
 
 
-# ── 검색 ──────────────────────────────────────────────────────────────────────
+# ── 검색: 식당 목록 수집 ─────────────────────────────────────────────────────
 
 def search_places(driver, area, category, limit):
     search_kw = CATEGORY_SEARCH.get(category, category)
-    query = f"{area} {search_kw}"
-    url = f"{BASE_URL}/search?keyword={quote_plus(query)}"
-    driver.get(url)
+    query = quote(f"{area} {search_kw} 맛집")
+    driver.get(SEARCH_URL.format(query=query))
+    time.sleep(2.5)
 
-    wait = WebDriverWait(driver, 15)
+    # 검색 결과 iframe 진입
+    driver.switch_to.default_content()
+    if not switch_to_iframe(driver, ["#searchIframe", "iframe[src*='place/list']"]):
+        print(f"  [warn] searchIframe 없음: {area}/{category}")
+        return []
+
+    wait = WebDriverWait(driver, 12)
     try:
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,
-            ".ResItemBox, .list-restaurant-item, .item-restaurant, article")))
+            "li.UEzoS, li[class*='PlaceItem'], .place_bluelink, li[data-nclick*='plc']")))
     except TimeoutException:
-        print(f"  [warn] 검색 결과 없음: {query}")
+        print(f"  [warn] 검색 결과 로드 실패: {area}/{category}")
         return []
 
     places = []
     seen = set()
-    stuck = 0
 
-    for page in range(1, 15):
-        card_selectors = (
-            ".ResItemBox, .list-restaurant-item, "
-            "article[class*='restaurant'], li[class*='restaurant'], "
-            ".restaurant-item"
-        )
-        cards = driver.find_elements(By.CSS_SELECTOR, card_selectors)
-        prev_len = len(places)
+    for _ in range(10):
+        cards = driver.find_elements(By.CSS_SELECTOR,
+            "li.UEzoS, li[class*='PlaceItem'], li[data-nclick*='plc']")
 
         for card in cards:
-            name = text_first(card, [
-                ".RestaurantName", ".restaurant-name", "h2", "h3",
-                "[class*='title']", "[class*='name']",
-            ])
-            link = ""
+            # 식당명
+            name = ""
+            for sel in ["span.place_bluelink", ".TYaxT", "a[class*='name']", "span[class*='name']"]:
+                els = card.find_elements(By.CSS_SELECTOR, sel)
+                if els:
+                    name = els[0].text.strip()
+                    if name:
+                        break
+
+            # place_id: href에서 추출
+            place_id = ""
             for a in card.find_elements(By.CSS_SELECTOR, "a"):
                 href = a.get_attribute("href") or ""
-                if "/restaurants/" in href:
-                    link = href
+                m = re.search(r"/(?:entry/place|p/entry/restaurant|restaurant)/(\d+)", href)
+                if not m:
+                    # data 속성에서 시도
+                    nclick = a.get_attribute("data-nclick") or ""
+                    m2 = re.search(r"plc\.(\d+)", nclick)
+                    if m2:
+                        place_id = f"nv_{m2.group(1)}"
+                        break
+                else:
+                    place_id = f"nv_{m.group(1)}"
                     break
-            if not name or not link:
-                continue
-            place_id = extract_place_id(link)
-            if place_id in seen:
+
+            if not place_id:
+                # li 자체의 data 속성
+                for attr in ["data-id", "data-place-id"]:
+                    val = card.get_attribute(attr) or ""
+                    if val.isdigit():
+                        place_id = f"nv_{val}"
+                        break
+
+            if not name or not place_id or place_id in seen:
                 continue
             seen.add(place_id)
 
-            rating = text_first(card, [
-                ".RatingNumber", "[class*='rating']", "[class*='score']", ".rate",
-            ])
-            review_count = digits(text_first(card, [
-                "[class*='review']", "[class*='comment']", "[class*='count']",
-            ]))
-            places.append(Place(place_id=place_id, name=name, url=link,
+            # 별점, 리뷰 수
+            rating = ""
+            for sel in [".orXYY", "[class*='rating']", "[class*='score']"]:
+                els = card.find_elements(By.CSS_SELECTOR, sel)
+                if els:
+                    t = els[0].text.strip()
+                    if re.search(r"\d", t):
+                        rating = t
+                        break
+
+            review_count = ""
+            for sel in [".MVx6e", "[class*='review']", "[class*='count']"]:
+                els = card.find_elements(By.CSS_SELECTOR, sel)
+                if els:
+                    review_count = digits(els[0].text)
+                    if review_count:
+                        break
+
+            places.append(Place(place_id=place_id, name=name,
                                 rating=rating, review_count=review_count))
             if len(places) >= limit:
                 return places
 
-        if len(places) == prev_len:
-            stuck += 1
-            if stuck >= 2:
-                break
-        else:
-            stuck = 0
+        # 더보기 / 스크롤
+        more = driver.find_elements(By.CSS_SELECTOR,
+            "a.fvwqf, button[class*='more'], a[class*='more'], .BXNBd a")
+        clicked = False
+        for btn in more:
+            if btn.is_displayed():
+                try:
+                    safe_click(driver, btn)
+                    time.sleep(1.5)
+                    clicked = True
+                    break
+                except Exception:
+                    pass
+        if not clicked:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1.2)
 
-        # 다음 페이지
-        next_url = f"{BASE_URL}/search?keyword={quote_plus(query)}&page={page + 1}"
-        driver.get(next_url)
-        time.sleep(1.5)
-        try:
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,
-                ".ResItemBox, .list-restaurant-item, article")))
-        except TimeoutException:
+        new_cards = driver.find_elements(By.CSS_SELECTOR,
+            "li.UEzoS, li[class*='PlaceItem'], li[data-nclick*='plc']")
+        if len(new_cards) <= len(cards) and not clicked:
             break
 
     return places
 
 
-# ── 식당 페이지: 메타 정보 ────────────────────────────────────────────────────
-
-def extract_meta(driver):
-    rating = text_first(driver, [
-        ".RatingNumber", "[class*='RatingAvg']", "[class*='rating-number']",
-        "[class*='score-avg']", ".avg-rating",
-    ])
-    rating = re.sub(r"[^\d.]", "", rating)
-
-    review_count_text = text_first(driver, [
-        "[class*='ReviewCount']", "[class*='review-count']",
-        "[class*='total-review']", "[class*='reviewCnt']",
-    ])
-    review_count = digits(review_count_text)
-
-    price = ""
-    for sel in ["[class*='price']", "[class*='Price']", ".menu-price", "[class*='cost']"]:
-        for el in driver.find_elements(By.CSS_SELECTOR, sel):
-            t = el.text.strip()
-            m = re.search(r"[\d,]{4,}", t)
-            if m:
-                val = int(m.group(0).replace(",", ""))
-                if 1000 <= val <= 500000:
-                    price = str(val)
-                    break
-        if price:
-            break
-
-    return rating, review_count, price
-
-
 # ── 리뷰 수집 ─────────────────────────────────────────────────────────────────
+
+def _get_raw_place_id(place_id):
+    return place_id.replace("nv_", "")
+
 
 def _collect_visible_reviews(driver):
     selectors = [
-        ".Review .review_contents",
-        ".Review p",
-        "[class*='ReviewItem'] p",
-        "[class*='ReviewItem'] [class*='content']",
-        "[class*='review-item'] p",
-        "[class*='review-item'] [class*='content']",
-        "[class*='review'] [class*='text']",
-        ".RestaurantReviewItem p",
+        ".pui__xvbZA",           # 방문자 리뷰 텍스트 (주요)
+        ".YEtaQ",
+        "span[class*='place_review']",
+        ".place_section .pui__vn15t2",
+        "li[class*='ReviewItem'] span",
+        "[class*='review-content']",
+        "[class*='reviewArea'] span",
     ]
-    texts = []
-    seen = set()
+    seen, texts = set(), []
     for sel in selectors:
         for el in driver.find_elements(By.CSS_SELECTOR, sel):
             t = el.text.strip()
@@ -254,58 +274,64 @@ def _collect_visible_reviews(driver):
     return texts
 
 
-def collect_reviews(driver, url, target_count):
+def collect_reviews_and_meta(driver, place):
+    raw_id = _get_raw_place_id(place.place_id)
+    url = REVIEW_URL.format(place_id=raw_id)
     driver.get(url)
+    time.sleep(2.0)
+
     wait = WebDriverWait(driver, 12)
 
-    # 리뷰 탭 또는 리뷰 섹션이 로드될 때까지 대기
+    # 별점/리뷰수 갱신 시도 (place 페이지에서 더 정확)
     try:
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,
-            ".Review, [class*='ReviewItem'], [class*='review-item'], [class*='ReviewList']")))
+        rating_el = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR,
+            ".place_section .PXMot, [class*='starScore'], [class*='ratingValue']")))
+        t = rating_el.text.strip()
+        if re.search(r"\d", t):
+            place.rating = t
     except TimeoutException:
-        time.sleep(2.0)
+        pass
 
-    # 리뷰 탭 클릭
-    for sel in ["a[href*='review']", "button[class*='review']", "[data-tab='review']",
-                "li[class*='review'] a", ".tab-review"]:
+    for sel in ["[class*='ReviewCount']", "[class*='visitorReviewCount']", ".place_section em"]:
         els = driver.find_elements(By.CSS_SELECTOR, sel)
         for el in els:
-            if el.is_displayed():
-                try:
-                    safe_click(driver, el)
-                    time.sleep(1.0)
-                    break
-                except Exception:
-                    pass
+            d = digits(el.text)
+            if d:
+                place.review_count = d
+                break
+        if place.review_count:
+            break
 
+    # 리뷰 무한 스크롤 수집
     seen = set()
     stuck = 0
+    target = int(_get_target_from_plan())
 
-    for _ in range(20):
+    for _ in range(25):
         current = _collect_visible_reviews(driver)
         prev_len = len(seen)
         seen.update(current)
 
-        if len(seen) >= target_count:
+        if len(seen) >= target:
             break
 
         # 더보기 버튼
         clicked = False
         for el in driver.find_elements(By.CSS_SELECTOR,
-                "button, a, [role='button'], [class*='MoreButton'], [class*='more-btn']"):
+                "a.fvwqf, button[class*='more'], [class*='moreBtn'], a[data-nclick*='more']"):
             try:
                 t = el.text.strip()
-                if el.is_displayed() and re.search(r"더\s*보기|more|More|전체", t):
+                if el.is_displayed() and re.search(r"더\s*보기|more|More", t, re.I):
                     safe_click(driver, el)
-                    time.sleep(1.0)
+                    time.sleep(1.2)
                     clicked = True
                     break
             except (StaleElementReferenceException, WebDriverException):
                 continue
 
         if not clicked:
-            driver.execute_script("window.scrollBy(0, 700);")
-            time.sleep(0.8)
+            driver.execute_script("window.scrollBy(0, 800);")
+            time.sleep(0.9)
 
         if len(seen) == prev_len:
             stuck += 1
@@ -314,7 +340,17 @@ def collect_reviews(driver, url, target_count):
         else:
             stuck = 0
 
-    return list(seen)[:target_count]
+    return list(seen)[:target]
+
+
+_plan_cache = {}
+
+
+def _get_target_from_plan():
+    if not _plan_cache:
+        plan = json.loads(PLAN_PATH.read_text(encoding="utf-8-sig"))
+        _plan_cache["target"] = plan["reviews_per_restaurant"]
+    return _plan_cache["target"]
 
 
 # ── CSV I/O ───────────────────────────────────────────────────────────────────
@@ -338,11 +374,10 @@ def dedupe(rows):
 
 def write_rows(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(f".{time.time_ns()}.tmp")
+    tmp = path.with_name(f"{path.stem}.{time.time_ns()}.tmp")
     with tmp.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
+        csv.DictWriter(f, fieldnames=FIELDNAMES).writeheader()
+        csv.DictWriter(f, fieldnames=FIELDNAMES).writerows(rows)
     _replace(tmp, path)
 
 
@@ -355,11 +390,11 @@ def read_statuses():
 
 def write_statuses(statuses):
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = STATUS_PATH.with_suffix(f".{time.time_ns()}.tmp")
+    tmp = STATUS_PATH.with_name(f"{STATUS_PATH.stem}.{time.time_ns()}.tmp")
     with tmp.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=STATUS_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(statuses.values())
+        w = csv.DictWriter(f, fieldnames=STATUS_FIELDNAMES)
+        w.writeheader()
+        w.writerows(statuses.values())
     _replace(tmp, STATUS_PATH)
 
 
@@ -402,11 +437,11 @@ def status_label(collected, target):
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="망고플레이트 리뷰 크롤러")
+    parser = argparse.ArgumentParser(description="네이버 플레이스 방문자 리뷰 크롤러")
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument("--show-browser", action="store_false", dest="headless")
-    parser.add_argument("--area", help="특정 지역만 크롤 (예: 강남)")
-    parser.add_argument("--category", help="특정 카테고리만 크롤 (예: 한식)")
+    parser.add_argument("--area", help="특정 지역만 (예: 강남)")
+    parser.add_argument("--category", help="특정 카테고리만 (예: 한식)")
     args = parser.parse_args()
 
     plan = json.loads(PLAN_PATH.read_text(encoding="utf-8-sig"))
@@ -421,7 +456,7 @@ def main():
     counts = review_counts(all_rows)
 
     if all_rows:
-        print(f"[resume] 기존 리뷰 {len(all_rows)}개 로드 ({OUTPUT_PATH.name})")
+        print(f"[resume] 기존 리뷰 {len(all_rows)}개 로드")
 
     driver = make_driver(headless=args.headless)
     try:
@@ -430,8 +465,10 @@ def main():
                 print(f"\n[search] {area} / {category}")
                 try:
                     places = search_places(driver, area, category, limit)
+                    driver.switch_to.default_content()
                 except (TimeoutException, WebDriverException) as e:
                     print(f"[error] 검색 실패: {e}")
+                    driver.switch_to.default_content()
                     append_error({"area": area, "category": category,
                                   "restaurant_id": "", "restaurant_name": "",
                                   "stage": "search", "error": repr(e)})
@@ -445,19 +482,9 @@ def main():
                         print(f"[skip] {idx}/{len(places)} {place.name}")
                         continue
 
-                    print(f"[collect] {idx}/{len(places)} {place.name}")
+                    print(f"[collect] {idx}/{len(places)} {place.name} ({place.place_id})")
                     try:
-                        # 메타 정보 (별점, 리뷰수, 가격)
-                        driver.get(place.url)
-                        time.sleep(1.5)
-                        rating, review_count, price = extract_meta(driver)
-                        if rating:
-                            place.rating = rating
-                        if review_count:
-                            place.review_count = review_count
-
-                        # 리뷰 수집
-                        reviews = collect_reviews(driver, place.url, target)
+                        reviews = collect_reviews_and_meta(driver, place)
                     except (TimeoutException, WebDriverException, JavascriptException) as e:
                         print(f"[error] 수집 실패: {place.name} / {e}")
                         append_error({"area": area, "category": category,
@@ -474,13 +501,12 @@ def main():
                             "category": category,
                             "rating": place.rating,
                             "review_count": place.review_count,
-                            "price": price,
+                            "price": "",
                             "photo_ratio": "",
                             "review_text": r,
                         }
                         for r in reviews
                     ]
-
                     all_rows = dedupe(all_rows + new_rows)
                     write_rows(OUTPUT_PATH, all_rows)
                     counts = review_counts(all_rows)
@@ -496,7 +522,7 @@ def main():
                     }
                     write_statuses(statuses)
                     print(f"  → 리뷰 {collected}개 수집")
-                    time.sleep(1.0)
+                    time.sleep(1.2)
 
     finally:
         driver.quit()
