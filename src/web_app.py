@@ -656,8 +656,7 @@ HTML = r"""
       }
 
       const numberMatches = [...text.matchAll(/(\d+)\s*명/g)].map((m) => Number(m[1]));
-      if (numberMatches.length > 1) return numberMatches.reduce((a, b) => a + b, 0);
-      if (numberMatches.length === 1) return numberMatches[0];
+      if (numberMatches.length >= 1) return numberMatches[numberMatches.length - 1];
 
       const personMatches = [...text.matchAll(/(\d+)\s*인/g)].map((m) => Number(m[1]));
       if (personMatches.length === 1) return personMatches[0];
