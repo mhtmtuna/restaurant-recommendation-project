@@ -19,8 +19,7 @@ REPORT_PATH = ROOT / "data" / "model_report.json"
 PREDICTIONS_PATH = ROOT / "data" / "restaurant_label_scores.csv"
 
 LABEL_COLUMNS = [
-    "couple_meal",
-    "couple_drink",
+    "couple",
     "friend_meal",
     "friend_drink",
     "business_meal",

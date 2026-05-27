@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCORES_PATH = ROOT / "data" / "restaurant_label_scores.csv"
 
 LABEL_MAP = {
-    ("연인", "식사"): "couple_meal_score",
-    ("연인", "술자리"): "couple_drink_score",
+    ("연인", "식사"): "couple_score",
+    ("연인", "술자리"): "couple_score",
     ("친구", "식사"): "friend_meal_score",
     ("친구", "술자리"): "friend_drink_score",
     ("비즈니스", "식사"): "business_meal_score",
