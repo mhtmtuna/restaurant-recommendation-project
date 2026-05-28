@@ -1,0 +1,6 @@
+﻿area,category,restaurant_id,restaurant_name,status,collected_count,target_count
+강남,한식,nv_1242805374,육달집 강남본점,partial,25,40
+강남,한식,nv_1796542659,우도옥 삼성본점,no_reviews,0,40
+강남,한식,nv_2049427610,사계절집 강남본점,partial,16,40
+강남,한식,nv_1822357841,강삼가든,no_reviews,0,40
+강남,한식,nv_1046192699,봉계타 현대백화점 무역센터점,completed,40,40
