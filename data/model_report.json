@@ -1,6 +1,6 @@
 {
   "model_name": "random_forest",
-  "total_size": 807,
+  "total_size": 630,
   "n_folds": 5,
   "method": "out-of-fold multilabel-aware cross validation (no data leakage)",
   "labels": [
@@ -12,97 +12,93 @@
   ],
   "label_distribution": {
     "couple": {
-      "positive_samples": 29,
-      "needs_more_data": true,
-      "r2_score": 0.005462169231138181
+      "positive_samples": 154,
+      "needs_more_data": false,
+      "r2_score": 0.3778507278142138
     },
     "friend_meal": {
-      "positive_samples": 47,
+      "positive_samples": 165,
       "needs_more_data": false,
-      "r2_score": -0.004105978118621456
+      "r2_score": 0.3769736148586589
     },
     "friend_drink": {
-      "positive_samples": 61,
+      "positive_samples": 178,
       "needs_more_data": false,
-      "r2_score": 0.04163072597011819
+      "r2_score": 0.45421376787862233
     },
     "business_meal": {
-      "positive_samples": 17,
-      "needs_more_data": true,
-      "r2_score": -0.013353141252228973
+      "positive_samples": 61,
+      "needs_more_data": false,
+      "r2_score": 0.3090543422167745
     },
     "business_drink": {
-      "positive_samples": 13,
-      "needs_more_data": true,
-      "r2_score": -0.08746705378956143
+      "positive_samples": 48,
+      "needs_more_data": false,
+      "r2_score": 0.3336902317495938
     }
   },
-  "warnings": [
-    "couple: positive samples=29, recommended>=30",
-    "business_meal: positive samples=17, recommended>=30",
-    "business_drink: positive samples=13, recommended>=30"
-  ],
-  "warning": "couple: positive samples=29, recommended>=30; business_meal: positive samples=17, recommended>=30; business_drink: positive samples=13, recommended>=30",
+  "warnings": [],
+  "warning": "",
   "evaluation": {
-    "r2_score": -0.011566655591831098,
-    "macro_f1": 0.006349206349206349,
-    "micro_f1": 0.011834319526627219,
-    "samples_f1": 0.0008261049153242461
+    "r2_score": 0.37035653690357273,
+    "macro_f1": 0.619495649466091,
+    "micro_f1": 0.6713286713286714,
+    "samples_f1": 0.23153691106072055
   },
   "classification_report": {
     "couple": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 29.0
+      "precision": 0.6243093922651933,
+      "recall": 0.7337662337662337,
+      "f1-score": 0.6746268656716418,
+      "support": 154.0
     },
     "friend_meal": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 47.0
+      "precision": 0.6213592233009708,
+      "recall": 0.7757575757575758,
+      "f1-score": 0.6900269541778976,
+      "support": 165.0
     },
     "friend_drink": {
-      "precision": 0.5,
-      "recall": 0.01639344262295082,
-      "f1-score": 0.031746031746031744,
-      "support": 61.0
+      "precision": 0.6697674418604651,
+      "recall": 0.8089887640449438,
+      "f1-score": 0.732824427480916,
+      "support": 178.0
     },
     "business_meal": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 17.0
+      "precision": 0.574468085106383,
+      "recall": 0.4426229508196721,
+      "f1-score": 0.5,
+      "support": 61.0
     },
     "business_drink": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 13.0
+      "precision": 0.625,
+      "recall": 0.4166666666666667,
+      "f1-score": 0.5,
+      "support": 48.0
     },
     "micro avg": {
-      "precision": 0.5,
-      "recall": 0.005988023952095809,
-      "f1-score": 0.011834319526627219,
-      "support": 167.0
+      "precision": 0.6343612334801763,
+      "recall": 0.7128712871287128,
+      "f1-score": 0.6713286713286714,
+      "support": 606.0
     },
     "macro avg": {
-      "precision": 0.1,
-      "recall": 0.003278688524590164,
-      "f1-score": 0.006349206349206349,
-      "support": 167.0
+      "precision": 0.6229808285066024,
+      "recall": 0.6355604382110184,
+      "f1-score": 0.619495649466091,
+      "support": 606.0
     },
     "weighted avg": {
-      "precision": 0.18263473053892215,
-      "recall": 0.005988023952095809,
-      "f1-score": 0.011595855907233152,
-      "support": 167.0
+      "precision": 0.6318961651751687,
+      "recall": 0.7128712871287128,
+      "f1-score": 0.6645045096442063,
+      "support": 606.0
     },
     "samples avg": {
-      "precision": 0.0012391573729863693,
-      "recall": 0.0006195786864931846,
-      "f1-score": 0.0008261049153242461,
-      "support": 167.0
+      "precision": 0.2363492063492063,
+      "recall": 0.25182539682539684,
+      "f1-score": 0.23153691106072055,
+      "support": 606.0
     }
   }
 }
