@@ -6,11 +6,16 @@
 """
 
 import csv
+import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 OUTPUT_PATH = DATA_DIR / "raw_reviews.csv"
+DEFAULT_SOURCE_PATHS = [
+    DATA_DIR / "raw_reviews_kakao.csv",
+    DATA_DIR / "raw_reviews_naver.csv",
+]
 
 FIELDNAMES = [
     "restaurant_id", "restaurant_name", "area", "category",
@@ -33,13 +38,35 @@ def dedupe(rows):
     return result
 
 
+def resolve_sources(explicit_sources=None):
+    if explicit_sources:
+        return [Path(source) for source in explicit_sources]
+
+    sources = [path for path in DEFAULT_SOURCE_PATHS if path.exists()]
+    if (DATA_DIR / "raw_reviews_kakao.csv").exists():
+        return sources
+
+    if OUTPUT_PATH.exists():
+        print(
+            "[warn] data/raw_reviews_kakao.csv가 없어 기존 data/raw_reviews.csv를 "
+            "카카오/기존 소스 fallback으로 사용합니다. 원천 파일과 병합 산출물을 "
+            "분리하려면 data/raw_reviews_kakao.csv를 두거나 --source를 지정하세요."
+        )
+        return [OUTPUT_PATH] + [path for path in sources if path != OUTPUT_PATH]
+
+    return sources
+
+
 def main():
-    # 카카오맵(기존) + 추가 소스만 병합 (백업·샘플 파일 제외)
-    candidates = [
-        DATA_DIR / "raw_reviews.csv",
-        DATA_DIR / "raw_reviews_naver.csv",
-    ]
-    sources = [p for p in candidates if p.exists()]
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--source",
+        action="append",
+        help="병합할 원천 CSV 경로. 여러 번 지정 가능.",
+    )
+    args = parser.parse_args()
+
+    sources = [path for path in resolve_sources(args.source) if path.exists()]
     if not sources:
         print("병합할 파일이 없습니다.")
         return

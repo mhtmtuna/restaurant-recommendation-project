@@ -1,7 +1,10 @@
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from model_training_common import ROOT, train_and_save
+try:
+    from .model_training_common import ROOT, train_and_save
+except ImportError:  # Support `python src/train_model_adaboost.py`.
+    from model_training_common import ROOT, train_and_save
 
 MODEL_PATH = ROOT / "models" / "restaurant_recommender_adaboost.joblib"
 REPORT_PATH = ROOT / "data" / "model_report_adaboost.json"

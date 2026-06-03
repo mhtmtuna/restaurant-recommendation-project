@@ -77,6 +77,8 @@ def sanitize_numeric_features(data):
     """
     data = data.copy()
     for col in NUMERIC_FEATURES:
+        if col not in data.columns:
+            data[col] = np.nan
         data[col] = pd.to_numeric(data[col], errors="coerce")
 
     if "rating" in data:

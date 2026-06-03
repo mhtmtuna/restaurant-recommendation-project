@@ -1,4 +1,7 @@
-from model_training_common import ROOT, train_and_save
+try:
+    from .model_training_common import ROOT, train_and_save
+except ImportError:  # Support `python src/train_model_catboost.py`.
+    from model_training_common import ROOT, train_and_save
 
 MODEL_PATH = ROOT / "models" / "restaurant_recommender_catboost.joblib"
 REPORT_PATH = ROOT / "data" / "model_report_catboost.json"

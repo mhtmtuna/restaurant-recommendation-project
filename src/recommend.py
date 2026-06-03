@@ -28,7 +28,10 @@ def main():
     scores = pd.read_csv(SCORES_PATH)
 
     query = args.area.replace("구", "").replace("동", "")
-    mask = scores["area"].str.contains(query, na=False) | scores["area"].str.contains(args.area, na=False)
+    mask = (
+        scores["area"].str.contains(query, regex=False, na=False)
+        | scores["area"].str.contains(args.area, regex=False, na=False)
+    )
     filtered = scores[mask].copy()
 
     if filtered.empty:

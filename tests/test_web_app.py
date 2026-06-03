@@ -40,8 +40,8 @@ class WebAppSecurityTest(unittest.TestCase):
 
         scores = predict_scores_from_model(bundle, features)
 
-        self.assertAlmostEqual(scores["a"]["couple_meal_score"], 0.1)
-        self.assertAlmostEqual(scores["b"]["couple_meal_score"], 0.2)
+        self.assertAlmostEqual(scores["a"]["couple_score"], 0.1)
+        self.assertAlmostEqual(scores["b"]["couple_score"], 0.2)
 
 
 if __name__ == "__main__":
