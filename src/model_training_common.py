@@ -23,11 +23,11 @@ LABEL_COLUMNS = [
     "business_drink",
 ]
 
+# price / photo_ratio 는 전 데이터에서 상수 0(미수집) → 정보량 0인 죽은 피처라 제외.
+#   build_features.py 는 CSV에 계속 기록하므로 추후 수집되면 여기 다시 추가하면 됨.
 NUMERIC_FEATURES = [
     "rating",
     "review_count",
-    "price",
-    "photo_ratio",
     "collected_review_count",
     "taste_score",
     "taste_confidence",
@@ -51,6 +51,15 @@ NUMERIC_FEATURES = [
 
 CATEGORICAL_FEATURES = ["area", "category"]
 
+# 0이 "값 없음"을 뜻하지 않는 피처들. 결측을 0으로 채우면 별점 0점(최악)처럼 분포 밖
+# 신호가 되어 모델을 오도하므로, NaN으로 두고 파이프라인의 SimpleImputer(median)가 대치하게 한다.
+MEDIAN_IMPUTE_FEATURES = ["rating", "review_count"]
+
+# 오염값 정제 범위. 네이버 크롤러에서 'rating="방문자 리뷰 1,068"',
+# 'review_count="16731900"' 같은 값이 유입된 적이 있어 범위 밖이면 결측 처리한다.
+RATING_MIN, RATING_MAX = 0.5, 5.0
+REVIEW_COUNT_MIN, REVIEW_COUNT_MAX = 1, 500000
+
 N_FOLDS = 5
 MIN_RECOMMENDED_POSITIVES = 30
 
@@ -58,9 +67,36 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
+def sanitize_numeric_features(data):
+    """학습/추론 공통 수치 피처 전처리 (train/serve skew 방지를 위해 한 곳에서 관리).
+
+    - 모든 수치 피처를 숫자로 강제 변환.
+    - rating/review_count 의 범위 밖 오염값은 NaN 으로 정제.
+    - MEDIAN_IMPUTE_FEATURES 는 NaN 으로 남겨 파이프라인의 SimpleImputer(median)가 대치.
+    - 그 외 수치 피처(mentions/score/confidence 등 0이 유의미한 값)는 0으로 채움.
+    """
+    data = data.copy()
+    for col in NUMERIC_FEATURES:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+
+    if "rating" in data:
+        data.loc[(data["rating"] < RATING_MIN) | (data["rating"] > RATING_MAX), "rating"] = np.nan
+    if "review_count" in data:
+        data.loc[
+            (data["review_count"] < REVIEW_COUNT_MIN) | (data["review_count"] > REVIEW_COUNT_MAX),
+            "review_count",
+        ] = np.nan
+
+    for col in NUMERIC_FEATURES:
+        if col not in MEDIAN_IMPUTE_FEATURES:
+            data[col] = data[col].fillna(0)
+    return data
+
+
 def read_features():
     data = pd.read_csv(FEATURES_PATH)
-    for col in NUMERIC_FEATURES + LABEL_COLUMNS:
+    data = sanitize_numeric_features(data)
+    for col in LABEL_COLUMNS:
         data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
     for col in CATEGORICAL_FEATURES + ["seat_type"]:
         data[col] = data[col].fillna("")

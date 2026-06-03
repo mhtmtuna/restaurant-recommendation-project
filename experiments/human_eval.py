@@ -44,10 +44,10 @@ def get_top_k(scores_df, area, score_col, k=TOP_K):
     return filtered.reset_index(drop=True)
 
 
-def build_template(scores_df):
+def build_template(scores_df, k=TOP_K):
     rows = []
     for area, relation, occasion, score_col in CONDITIONS:
-        top = get_top_k(scores_df, area, score_col)
+        top = get_top_k(scores_df, area, score_col, k)
         for rank, r in enumerate(top.itertuples(index=False), start=1):
             rows.append({
                 "조건_지역": area,
@@ -85,18 +85,28 @@ def summarize(filled_path: Path):
 
 def main():
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "--summarize":
-        filled = Path(sys.argv[2]) if len(sys.argv) > 2 else OUT_DIR / "human_eval_filled.csv"
+    args = sys.argv[1:]
+    if args and args[0] == "--summarize":
+        filled = Path(args[1]) if len(args) > 1 and not args[1].startswith("--") else OUT_DIR / "human_eval_filled.csv"
         summarize(filled)
         return
 
+    # 옵션: --topk N (기본 5), --out 파일명 (기본 human_eval_template.csv)
+    top_k = TOP_K
+    out_path = OUT_TEMPLATE
+    if "--topk" in args:
+        top_k = int(args[args.index("--topk") + 1])
+    if "--out" in args:
+        out_arg = Path(args[args.index("--out") + 1])
+        out_path = out_arg if out_arg.is_absolute() else OUT_DIR / out_arg
+
     scores_df = pd.read_csv(SCORES_PATH)
-    template = build_template(scores_df)
-    template.to_csv(OUT_TEMPLATE, index=False, encoding="utf-8-sig")
-    print(f"saved: {OUT_TEMPLATE}")
-    print(f"\n총 {len(template)}행 ({len(CONDITIONS)}개 조건 × top-{TOP_K})")
+    template = build_template(scores_df, top_k)
+    template.to_csv(out_path, index=False, encoding="utf-8-sig")
+    print(f"saved: {out_path}")
+    print(f"\n총 {len(template)}행 ({len(CONDITIONS)}개 조건 × top-{top_k})")
     print("\n[사용법]")
-    print(f"  1. {OUT_TEMPLATE.name} 열기")
+    print(f"  1. {out_path.name} 열기")
     print("  2. '적절성_1~5' 열에 1(매우 부적절) ~ 5(매우 적절) 입력")
     print("  3. '평가자' 열에 이름 입력")
     print(f"  4. experiments/human_eval_filled.csv 로 저장 후 아래 실행:")

@@ -179,13 +179,15 @@ def search_places(driver, area, category, limit):
                 els = card.find_elements(By.CSS_SELECTOR, sel)
                 if els:
                     t = els[0].text.strip()
-                    if re.search(r"\d", t):
+                    # 순수 별점(0.5~5.0)만 채택 — "방문자 리뷰 1,068" 같은 오염 차단
+                    if re.match(r"^\d+(\.\d+)?$", t) and 0.5 <= float(t) <= 5.0:
                         rating = t
                         break
             mv_els = card.find_elements(By.CSS_SELECTOR, ".MVx6e, [class*='reviewCount']")
             for el in mv_els:
                 d = digits(el.text)
-                if d:
+                # 합리적 범위(1~500,000)만 리뷰 수로 인정 — place id 등 큰 숫자 오염 차단
+                if d and 1 <= int(d) <= 500000:
                     review_count = d
                     break
         except StaleElementReferenceException:

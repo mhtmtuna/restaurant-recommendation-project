@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import joblib
 import pandas as pd
 
+from model_training_common import sanitize_numeric_features
+
 ROOT = Path(__file__).resolve().parents[1]
 SCORES_PATH = ROOT / "data" / "restaurant_label_scores.csv"
 FEATURES_PATH = ROOT / "data" / "restaurants_features.csv"
@@ -92,9 +94,9 @@ def predict_scores_from_model(bundle, features_data):
     categorical_features = bundle["categorical_features"]
     seat_columns = bundle["seat_columns"]
 
-    data = features_data.copy()
-    for col in numeric_features:
-        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
+    # 학습과 동일한 전처리를 적용해 train/serve skew 방지.
+    # (rating/review_count 는 0이 아닌 NaN 으로 두어 모델 내부 SimpleImputer(median)가 대치)
+    data = sanitize_numeric_features(features_data)
     for col in categorical_features:
         data[col] = data[col].fillna("")
 
