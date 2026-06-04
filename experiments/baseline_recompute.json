@@ -1,0 +1,13 @@
+{
+  "macro_f1": {
+    "Random": 0.2017,
+    "Majority (all-zero)": 0.0,
+    "Rating-only (>=4.0)": 0.0417,
+    "Keyword-only": 1.0,
+    "RF (ours, from model_report)": 0.6189
+  },
+  "ratios": {
+    "RF_vs_RatingOnly": 14.84,
+    "RF_vs_Random": 3.07
+  }
+}
