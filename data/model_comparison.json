@@ -1,30 +1,42 @@
 {
   "ranking_metric": "r2_score",
+  "dataset_total_size": 630,
+  "labels": [
+    "couple",
+    "friend_meal",
+    "friend_drink",
+    "business_meal",
+    "business_drink"
+  ],
   "best_model": "random_forest",
   "models": [
     {
       "model_name": "random_forest",
       "report_path": "data\\model_report.json",
-      "r2_score": 0.3716256582215337,
-      "macro_f1": 0.6200818448142966,
-      "micro_f1": 0.6687948922585794,
-      "samples_f1": 0.22574829931972792
+      "total_size": 630,
+      "labels": [
+        "couple",
+        "friend_meal",
+        "friend_drink",
+        "business_meal",
+        "business_drink"
+      ],
+      "r2_score": 0.3728475008066455,
+      "macro_f1": 0.61886476017437,
+      "micro_f1": 0.6687747035573123,
+      "samples_f1": 0.22781179138321997
+    }
+  ],
+  "skipped_reports": [
+    {
+      "model_name": "adaboost",
+      "report_path": "data\\model_report_adaboost.json",
+      "reason": "incompatible schema: total_size=347, labels=['couple_meal', 'couple_drink', 'friend_meal', 'friend_drink', 'business_meal', 'business_drink']"
     },
     {
       "model_name": "catboost",
       "report_path": "data\\model_report_catboost.json",
-      "r2_score": 0.3362079169778398,
-      "macro_f1": 0.5422163067543057,
-      "micro_f1": 0.599644128113879,
-      "samples_f1": 0.18783824640967497
-    },
-    {
-      "model_name": "adaboost",
-      "report_path": "data\\model_report_adaboost.json",
-      "r2_score": -0.12295388002767667,
-      "macro_f1": 0.5891431164675447,
-      "micro_f1": 0.6244579358196011,
-      "samples_f1": 0.20174225245653818
+      "reason": "incompatible schema: total_size=347, labels=['couple_meal', 'couple_drink', 'friend_meal', 'friend_drink', 'business_meal', 'business_drink']"
     }
   ]
 }

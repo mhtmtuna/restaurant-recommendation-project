@@ -1,22 +1,25 @@
 """
-네이버 플레이스 방문자 리뷰 크롤러 (보안 우회 및 최적화 버전)
+네이버 플레이스 방문자 리뷰 크롤러.
+
+공개 페이지를 저속으로 수집하는 연구용 스크립트입니다. 실행 전 서비스 약관과
+robots 정책을 확인하고, 과도한 요청을 피하세요.
 """
 
 import argparse
 import csv
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-# 일반 selenium 대신 undetected_chromedriver 사용
+# 네이버 플레이스의 동적 렌더링을 안정적으로 처리하기 위해 Chrome 자동화를 사용합니다.
 import undetected_chromedriver as uc
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
     JavascriptException,
-    NoSuchElementException,
     StaleElementReferenceException,
     TimeoutException,
     WebDriverException,
@@ -59,9 +62,9 @@ class Place:
     element_index: int = 0  # 자연스러운 클릭 흐름 유지를 위해 인덱스 기록
 
 
-# ── 드라이버 (undetected-chromedriver 적용) ───────────────────────────────────
+# ── 드라이버 ───────────────────────────────────
 
-def make_driver(headless=True):
+def make_driver(headless=True, chrome_version=None):
     options = uc.ChromeOptions()
     
     if headless:
@@ -74,12 +77,19 @@ def make_driver(headless=True):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     
-    # 봇 차단 우회를 위한 핵심 옵션들
+    # 자동화 환경에서 렌더링이 흔들리는 경우를 줄이기 위한 옵션.
     options.add_argument("--disable-blink-features=AutomationControlled")
-    
-    # 일반 유저처럼 보이기 위한 User-Agent 명시
-    driver = uc.Chrome(options=options, version_main=148)
-    return driver
+
+    version = chrome_version
+    if version is None:
+        env_version = os.environ.get("NAVER_CRAWLER_CHROME_VERSION")
+        if env_version:
+            version = int(env_version)
+
+    kwargs = {"options": options}
+    if version:
+        kwargs["version_main"] = version
+    return uc.Chrome(**kwargs)
 
 
 def safe_click(driver, element):
@@ -179,13 +189,15 @@ def search_places(driver, area, category, limit):
                 els = card.find_elements(By.CSS_SELECTOR, sel)
                 if els:
                     t = els[0].text.strip()
-                    if re.search(r"\d", t):
+                    # 순수 별점(0.5~5.0)만 채택 — "방문자 리뷰 1,068" 같은 오염 차단
+                    if re.match(r"^\d+(\.\d+)?$", t) and 0.5 <= float(t) <= 5.0:
                         rating = t
                         break
             mv_els = card.find_elements(By.CSS_SELECTOR, ".MVx6e, [class*='reviewCount']")
             for el in mv_els:
                 d = digits(el.text)
-                if d:
+                # 합리적 범위(1~500,000)만 리뷰 수로 인정 — place id 등 큰 숫자 오염 차단
+                if d and 1 <= int(d) <= 500000:
                     review_count = d
                     break
         except StaleElementReferenceException:
@@ -475,6 +487,11 @@ def main():
     parser.add_argument("--area", help="특정 지역만 (예: 강남)")
     parser.add_argument("--category", help="특정 카테고리만 (예: 한식)")
     parser.add_argument("--limit", type=int, help="식당 수 제한 (테스트용)")
+    parser.add_argument(
+        "--chrome-version",
+        type=int,
+        help="Chrome major version override. 기본값은 undetected-chromedriver 자동 감지.",
+    )
     args = parser.parse_args()
 
     plan = json.loads(PLAN_PATH.read_text(encoding="utf-8-sig"))
@@ -491,7 +508,7 @@ def main():
     if all_rows:
         print(f"[resume] 기존 리뷰 {len(all_rows)}개 로드")
 
-    driver = make_driver(headless=args.headless)
+    driver = make_driver(headless=args.headless, chrome_version=args.chrome_version)
     try:
         for area in areas:
             for category in categories:

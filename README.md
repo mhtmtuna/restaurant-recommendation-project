@@ -1,26 +1,73 @@
-# 장소 추천 ML 시스템
+# 🍽️ Situational Restaurant Recommender
 
-카카오맵 리뷰 기반으로 관계·상황·위치를 입력받아 적합한 음식점을 추천하는 멀티라벨 분류 시스템입니다.
+> **관계·상황·지역을 입력하면, 리뷰에서 학습한 분위기로 어울리는 맛집을 추천합니다.**
+> 카카오맵 + 네이버 리뷰 15,045개 · 식당 630곳 · 멀티라벨 분류
+
+![python](https://img.shields.io/badge/python-3.x-blue)
+![model](https://img.shields.io/badge/model-RandomForest_multilabel-orange)
+![data](https://img.shields.io/badge/data-630_restaurants_·_15K_reviews-green)
+![macro F1](https://img.shields.io/badge/macro_F1-0.62-success)
 
 ---
 
-## 바로 실행하기
+## What it does
+
+- **상황 기반 추천** — `관계(연인/친구/비즈니스)` × `목적(식사/술자리)` × `지역`을 받아 어울리는 식당을 정렬
+- **리뷰에서 분위기 학습** — 별점이 아니라 *리뷰 텍스트*에서 맛·가성비·양·조도·소음·공간감을 수치화
+- **멀티라벨** — 한 식당이 여러 상황에 적합할 수 있음 (연인+친구 동시 가능)
+- **두 가지 인터페이스** — 웹 UI(자연어 입력) + 터미널 CLI
+
+---
+
+## Demo
+
+![demo](docs/demo.png)
+
+> 웹앱에서 "연인이랑 강남에서 저녁" 같은 자연어를 입력하면 조건을 파싱해 추천 결과를 보여줍니다.
+
+---
+
+## How it works
+
+```text
+ ┌─────────────────────────────┐
+ │  카카오맵 + 네이버 리뷰 수집     │   crawl_kakao.py · crawl_naver.py · merge_reviews.py
+ │  630 식당 / 15,045 리뷰       │
+ └──────────────┬──────────────┘
+                ▼
+ ┌─────────────────────────────┐
+ │  리뷰 → 식당 단위 피처 변환      │   build_features.py
+ │  • 감성: 맛 / 가성비 / 양        │   키워드 + 부정어 처리(12자 윈도우)
+ │  • 분위기: 조도 / 소음 / 공간감   │   + Bayesian shrinkage(저리뷰 보정)
+ │  • 좌석 유형 + 별점/리뷰수        │
+ └──────────────┬──────────────┘
+                ▼
+ ┌─────────────────────────────┐
+ │  멀티라벨 분류 (RandomForest)   │   train_model.py
+ │  5-fold OOF · 5개 상황 라벨     │   data leakage 없는 교차검증
+ └──────────────┬──────────────┘
+                ▼
+ ┌─────────────────────────────┐
+ │  추천                         │   recommend.py (CLI) · web_app.py (Web)
+ └─────────────────────────────┘
+```
+
+**5개 상황 라벨:** `couple` · `friend_meal` · `friend_drink` · `business_meal` · `business_drink`
+
+---
+
+## Get started
 
 ```bash
 git clone https://github.com/mhtmtuna/restaurant-recommendation-project.git
 cd restaurant-recommendation-project
 pip install -r requirements.txt
-python src/web_app.py
+python src/web_app.py        # http://127.0.0.1:8000
 ```
 
-브라우저에서 `http://127.0.0.1:8000` 접속. 자연어 입력과 선택형 입력을 모두 지원합니다.
+> `data/restaurants_features.csv`, `data/restaurant_label_scores.csv`가 포함되어 있어 **크롤링·재학습 없이 바로 실행**됩니다.
 
-GitHub에 `data/restaurants_features.csv`와 `data/restaurant_label_scores.csv`가 포함되어 있으므로, 단순 실행 시 크롤링과 모델 학습을 다시 할 필요가 없습니다.
-
----
-
-## 터미널 추천 예시
-
+**터미널 추천:**
 ```bash
 python src/recommend.py --relation 연인 --occasion 식사 --area 강남
 ```
@@ -29,148 +76,96 @@ python src/recommend.py --relation 연인 --occasion 식사 --area 강남
 |------|----|
 | `--relation` | `연인` / `친구` / `비즈니스` |
 | `--occasion` | `식사` / `술자리` |
-| `--area` | 강남, 건대, 잠실 등 |
+| `--area` | `강남` / `건대` / `잠실` |
 | `--top-k` | 상위 N개 (기본 10) |
 
 ---
 
-## 데이터 파이프라인
+## Proof
 
-```
-카카오맵 크롤링 (crawl_kakao.py)
-    ↓
-리뷰 → feature/라벨 변환 (build_features.py)
-    ↓
-멀티라벨 모델 학습 (train_model.py)
-    ↓
-추천 (recommend.py / web_app.py)
-```
+### 모델 성능 (630 식당, RandomForest 5-fold OOF)
 
-데이터를 새로 수집하거나 모델을 재학습할 때:
+| Label | Positive 샘플 | F1 |
+|-------|:---:|:---:|
+| `couple` | 154 | 0.65 |
+| `friend_meal` | 165 | 0.69 |
+| `friend_drink` | 178 | 0.75 |
+| `business_meal` | 61 | 0.47 |
+| `business_drink` | 48 | 0.54 |
+| **macro F1** | — | **0.62** |
+| **r2** | — | **0.37** |
 
-```bash
-python src/crawl_kakao.py      # 중단 후 재실행 시 자동 이어서 진행
-python src/build_features.py
-python src/train_model.py
-python src/web_app.py
-```
+### 사람 평가 (Human Evaluation)
 
----
+추천 결과를 사람이 **상황 적합성** 기준으로 1~5점 평가 (15조건 × top-3 = 45건):
 
+| 관계 | 평균 적합도 (5점 만점) |
+|------|:---:|
+| 연인 | **4.89** |
+| 친구 | **4.39** |
+| 비즈니스 | **3.11** |
+| **전체** | **3.98** |
 
-## 주요 파일
-
-| 파일 | 설명 |
-|------|------|
-| `src/web_app.py` | 웹 UI (자연어 + 선택형 입력) |
-| `src/recommend.py` | 터미널 추천 실행 |
-| `src/train_model.py` | 멀티라벨 모델 학습 (5-fold OOF) |
-| `src/build_features.py` | 리뷰 → feature 및 라벨 생성 |
-| `src/crawl_kakao.py` | 카카오맵 리뷰 수집 (Selenium) |
-| `config/keywords.json` | feature / 라벨 키워드 사전 |
-| `config/sampling_plan.json` | 크롤링 지역·카테고리·수집 수 설정 |
-| `data/restaurants_features.csv` | 식당별 feature |
-| `data/restaurant_label_scores.csv` | 식당별 추천 점수 (OOF) |
-| `data/model_report.json` | 라벨별 성능 및 데이터 분포 |
+> **모델 지표 ↔ 사람 평가 교차검증:** 모델 F1이 낮은 `business` 라벨(0.47~0.54)이 사람 평가에서도 가장 낮음(3.11). 서로 다른 두 방법이 같은 약점을 가리켜, "키워드 기반 라벨이라 평가가 순환적"이라는 비판을 방어한다.
+> *(단일 평가자 기준 예비 결과 — 평가 기준은 [`experiments/human_eval_평가기준.md`](experiments/human_eval_평가기준.md) 참고)*
 
 ---
 
-## 핵심 설계
+## Design
 
-- 분위기를 **조도·소음·공간감·좌석 유형**으로 분해해 수치화
-- 부정어 처리: "안 맛있어요" → 긍정 카운트 제외 (윈도우 12자 양방향 탐지)
-- **Bayesian Shrinkage**: 리뷰가 적은 식당은 같은 지역×카테고리 평균으로 부드럽게 보정
-- 한 식당이 여러 상황에 적합할 수 있으므로 **멀티라벨 분류** 사용
+- **분위기 분해** — "분위기 좋다"를 조도·소음·공간감·좌석 유형으로 나눠 수치화
+- **부정어 처리** — "안 맛있어요" → 긍정 카운트에서 제외 (양방향 12자 윈도우)
+- **Bayesian Shrinkage** — 리뷰가 적은 식당은 같은 `지역×카테고리` 평균으로 부드럽게 보정
+- **결측 처리** — 별점 없는 식당은 0이 아닌 **중앙값(median)** 으로 대치 (0은 "별점 0점=최악"으로 오인되므로)
+- **멀티라벨 분류** — 한 식당의 여러 상황 적합성을 독립적으로 예측
+- **자연어 입력** — 규칙 기반 슬롯 추출기로 "연인이랑 강남 저녁" → 구조화된 조건으로 변환
 
-## 폴더와 파일 역할
+---
+
+<details>
+<summary><b>Project structure</b> (펼치기)</summary>
 
 ```text
 restaurant-recommendation-project/
 ├─ config/
+│  ├─ keywords.json          # 맛/가성비/분위기/상황 라벨 키워드 사전
+│  └─ sampling_plan.json     # 크롤링 지역·카테고리·수집량 설정
 ├─ data/
+│  ├─ raw_reviews.csv        # 원본 리뷰 (카카오+네이버 병합)
+│  ├─ restaurants_features.csv     # 식당 단위 피처
+│  ├─ restaurant_label_scores.csv  # 식당별 추천 점수 (OOF)
+│  └─ model_report.json      # 라벨별 성능·분포 리포트
 ├─ models/
+│  └─ restaurant_recommender.joblib   # 학습된 모델 (train_model.py 생성)
 ├─ src/
-├─ README.md
-└─ requirements.txt
+│  ├─ crawl_kakao.py · crawl_naver.py # 리뷰 수집 (Selenium)
+│  ├─ merge_reviews.py       # 카카오+네이버 병합·중복 제거
+│  ├─ build_features.py      # 리뷰 → 피처/라벨
+│  ├─ train_model.py         # 멀티라벨 학습 (5-fold OOF)
+│  ├─ recommend.py           # 터미널 추천
+│  └─ web_app.py             # 웹 UI (자연어 + 선택형)
+└─ experiments/              # 모델 비교·피처 중요도·사람 평가
 ```
 
-### `config/`
+**재수집·재학습 (선택):**
+```bash
+python src/crawl_kakao.py     # --show-browser 권장 (헤드리스 불안정)
+python src/build_features.py
+python src/train_model.py
+```
 
-프로젝트 실행에 필요한 설정 파일을 모아둔 폴더입니다.
-
-- `keywords.json`: 리뷰에서 맛, 가성비, 양, 분위기, 좌석, 상황 라벨을 추출하기 위한 키워드 사전입니다.
-- `sampling_plan.json`: 크롤링할 지역, 카테고리, 카테고리별 식당 수, 식당별 리뷰 수를 설정합니다.
-
-### `data/`
-
-크롤링 결과, feature 결과, 모델 출력 결과를 저장하는 폴더입니다.
-
-- `raw_reviews_sample.csv`: 실제 크롤링 없이 기능을 확인할 수 있는 샘플 리뷰 데이터입니다.
-- `raw_reviews.csv`: 카카오맵에서 수집한 원본 리뷰 데이터입니다. 용량이 커질 수 있어 Git에는 올리지 않습니다.
-- `crawl_status.csv`: 크롤링한 식당별 진행 상태입니다. `completed`, `partial`, `no_reviews` 같은 상태를 기록해 중간 재실행을 돕습니다.
-- `crawl_errors.csv`: 크롤링 중 실패한 검색어나 식당을 기록합니다.
-- `restaurants_features.csv`: 원본 리뷰를 식당 단위 feature로 변환한 결과입니다.
-- `restaurant_label_scores.csv`: 학습된 추천 모델이 식당별로 예측한 상황별 추천 점수입니다.
-- `model_report.json`: 모델 학습 후 생성되는 평가 리포트입니다.
-
-### `models/`
-
-학습된 모델 파일을 저장하는 폴더입니다.
-
-- `restaurant_recommender.joblib`: `src/train_model.py` 실행 시 생성되는 추천 모델 파일입니다.
-- 모델 파일은 용량이 커질 수 있어 Git에는 올리지 않습니다.
-
-### `src/`
-
-실제 실행 코드가 들어 있는 폴더입니다.
-
-- `crawl_kakao.py`: 카카오맵에서 식당과 리뷰를 수집해 `data/raw_reviews.csv`를 생성합니다.
-- `build_features.py`: 리뷰 데이터를 읽어 식당별 점수, 신뢰도, 라벨을 계산하고 `data/restaurants_features.csv`를 생성합니다.
-- `train_model.py`: feature 데이터를 기반으로 멀티라벨 추천 모델을 학습하고 모델 파일, 평가 리포트, 추천 점수 CSV를 생성합니다.
-- `recommend.py`: 터미널에서 관계, 상황, 지역을 입력해 추천 결과를 확인하는 간단한 실행 파일입니다.
-- `web_app.py`: 자연어 입력과 선택형 입력을 함께 제공하는 웹 UI입니다.
-
-### 루트 파일
-
-- `README.md`: 프로젝트 설명, 실행 방법, 파일 구조를 정리한 문서입니다.
-- `requirements.txt`: 실행에 필요한 Python 패키지 목록입니다.
-
-## 핵심 아이디어
-
-- 분위기를 조도, 소음, 공간감, 좌석, 톤으로 분해
-- 언급된 리뷰만 분모로 사용해 점수 계산
-- 언급 수가 적은 feature는 결측 처리 후 같은 구역 x 카테고리 평균으로 보완
-- 한 식당이 여러 상황에 적합할 수 있으므로 멀티라벨 분류 사용
-- 자연어 입력은 규칙 기반 슬롯 추출기로 구조화된 조건으로 변환
+</details>
 
 ---
 
-## 추천 점수 출처 구조
-
-두 가지 점수 출처를 사용하는 하이브리드 구조입니다.
-
-**기존 학습 식당 → `data/restaurant_label_scores.csv`**
-- Out-of-Fold(OOF) 예측 점수 사용
-- 각 식당은 자신이 학습에 포함되지 않은 fold의 모델로 예측 → 데이터 누수 없음
-
-**신규 식당 → `models/restaurant_recommender.joblib`**
-- 전체 데이터로 학습된 최종 모델이 실시간 추론
-- `--score-source csv|model|auto` 옵션으로 선택 가능
-
----
-
-## 현재 한계
+## Limitations
 
 | 항목 | 현재 상태 | 개선 방향 |
 |------|---------|---------|
-| Positive sample 부족 | 807개 식당 수집 후에도 couple 29개·business_meal 17개·business_drink 13개 — 권장(30개) 미달. 간접 키워드 확장 및 피처 기반 보완 규칙을 시도했으나 개선 폭 미미 | 카카오맵 리뷰는 관계 맥락을 잘 명시하지 않아 수집량을 늘려도 비율이 크게 개선되기 어려움. LLM 기반 라벨링 또는 human-labeled 검증셋 확보가 근본 해결책 |
-| 라벨 생성 방식 | 키워드 사전 기반 자동 라벨링 → 리뷰에 "여친이랑", "회식" 등 명시적 표현이 없으면 라벨 미할당 | human-labeled 검증셋 확보 또는 LLM 기반 라벨링 |
-| 텍스트 표현 | 키워드 빈도 기반 (TF 수준) | 임베딩(KLUE-BERT 등) 도입으로 문맥 이해 |
-| 지역 커버리지 | 강남·건대·잠실 3개 지역 | 서울 전역 확장 |
-| 가격 데이터 | 카카오맵에서 수집 불가 — 전체 NULL | 다른 소스(네이버 플레이스 등) 보완 수집 |
+| `business` 라벨 약함 | positive 61/48개 (권장 30+는 넘으나 타 라벨 대비 적음), F1·사람 평가 모두 최저 | "회식/접대" 맥락이 리뷰에 드물게 명시됨 → LLM 라벨링 또는 human-labeled 셋 |
+| 라벨 생성 방식 | 키워드 사전 기반 자동 라벨링 | 사람 평가로 교차검증 중 (순환성 보완) |
+| 텍스트 표현 | 키워드 빈도(TF 수준) | 임베딩(KLUE-BERT 등)으로 문맥 이해 |
+| 가격 피처 | 카카오·네이버 모두 수집 불가 → 상수 0이라 피처에서 제외 | 별도 소스 보완 시 복원 가능 |
+| 지역 커버리지 | 강남·건대·잠실 3개 | 서울 전역 확장 |
 
----
-
-## 주의
-
-카카오맵 화면 구조가 바뀌면 CSS 선택자를 조정해야 할 수 있습니다. 수집은 공개 페이지를 대상으로 천천히 진행하고, 서비스 약관과 robots 정책을 확인한 뒤 사용하세요.
+> ⚠️ 크롤링은 공개 페이지를 천천히 수집하며, 서비스 약관·robots 정책을 확인하고 사용하세요. 카카오맵/네이버 화면 구조가 바뀌면 CSS 선택자 조정이 필요할 수 있습니다.
