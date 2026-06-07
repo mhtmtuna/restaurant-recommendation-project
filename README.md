@@ -95,15 +95,15 @@ python src/recommend.py --relation 연인 --occasion 식사 --area 강남
 | **macro F1** | — | **0.62** |
 | **r2** | — | **0.37** |
 
-### 왜 이렇게 골랐나 — 핵심 근거 2가지
+### 왜 이렇게 골랐나 — 모델 비교
 
-| 모델 선택 (3모델 비교) | 무엇이 상황을 가르나 |
-|:---:|:---:|
-| ![모델 비교](docs/fig_model_comparison.png) | ![피처 중요도](docs/fig_feature_importance.png) |
-| RF가 R²·F1 모두 1위 · AdaBoost는 R² 음수라 탈락 | **별점은 6위** — 리뷰에서 뽑은 신호가 상위 |
+![모델 성능 비교 (RF / CatBoost / AdaBoost)](experiments/model_metrics_comparison.png)
 
-> 📑 **모델 선택 · 피처 ablation · 출처 편향까지 전체 분석 과정 →
-> [`docs/분석리포트.md`](docs/분석리포트.md)** (모든 차트는 `experiments/make_readme_figures.py`로 재현)
+> RandomForest가 R²·Macro F1 모두 1위 · AdaBoost는 R²가 음수라 순위 추천에 부적합 → **RF 채택**
+
+> 📑 **피처 중요도 · 통계 검정(t-test) · ablation · 출처 편향까지 전체 분석 과정 →
+> [`docs/분석리포트.md`](docs/분석리포트.md)**
+> _(차트 재현: `experiments/visualize_model_metrics.py` · `visualize_analysis_dashboard.py`)_
 
 ### 사람 평가 (Human Evaluation)
 
