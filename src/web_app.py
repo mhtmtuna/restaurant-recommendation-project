@@ -9,6 +9,11 @@ from urllib.parse import urlparse
 import joblib
 import pandas as pd
 
+try:
+    from .model_training_common import sanitize_numeric_features
+except ImportError:  # Support `python src/web_app.py`.
+    from model_training_common import sanitize_numeric_features
+
 ROOT = Path(__file__).resolve().parents[1]
 SCORES_PATH = ROOT / "data" / "restaurant_label_scores.csv"
 FEATURES_PATH = ROOT / "data" / "restaurants_features.csv"
@@ -92,13 +97,18 @@ def predict_scores_from_model(bundle, features_data):
     categorical_features = bundle["categorical_features"]
     seat_columns = bundle["seat_columns"]
 
-    data = features_data.copy()
-    for col in numeric_features:
-        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
+    # 학습과 동일한 전처리를 적용해 train/serve skew 방지.
+    # (rating/review_count 는 0이 아닌 NaN 으로 두어 모델 내부 SimpleImputer(median)가 대치)
+    data = sanitize_numeric_features(features_data)
     for col in categorical_features:
-        data[col] = data[col].fillna("")
+        if col not in data.columns:
+            data[col] = ""
+        else:
+            data[col] = data[col].fillna("")
 
     from sklearn.preprocessing import MultiLabelBinarizer
+    if "seat_type" not in data.columns:
+        data["seat_type"] = ""
     seat_labels = data["seat_type"].apply(
         lambda v: [item for item in str(v).split(",") if item]
     )
@@ -564,6 +574,12 @@ HTML = r"""
             <option>중식</option>
             <option>양식</option>
             <option>카페 디저트</option>
+            <option>고깃집</option>
+            <option>치킨</option>
+            <option>분식</option>
+            <option>술집</option>
+            <option>이자카야</option>
+            <option>호프/통닭</option>
             <option>주점 바</option>
           </select>
         </div>
@@ -734,9 +750,21 @@ HTML = r"""
       if (partySize && !romanticMentioned) parsed.partySize = partySize;
 
       /* 음식 종류 (#9: 키워드 확장) */
-      if (includesAny(text, ["한식", "국밥", "고기", "삼겹살", "곱창", "찌개", "해장", "불고기", "갈비", "백반", "냉면", "비빔밥"])) {
+      if (includesAny(text, ["고깃집", "고기", "삼겹살", "곱창", "갈비", "불고기"])) {
+        parsed.category = "고깃집";
+      } else if (includesAny(text, ["치킨", "통닭", "치맥"])) {
+        parsed.category = "치킨";
+      } else if (includesAny(text, ["분식", "떡볶이", "김밥", "순대", "튀김"])) {
+        parsed.category = "분식";
+      } else if (includesAny(text, ["이자카야"])) {
+        parsed.category = "이자카야";
+      } else if (includesAny(text, ["호프", "맥주집"])) {
+        parsed.category = "호프/통닭";
+      } else if (includesAny(text, ["술집", "주점", "포차", "와인바", "칵테일바", "펍"])) {
+        parsed.category = "주점 바";
+      } else if (includesAny(text, ["한식", "국밥", "찌개", "해장", "백반", "냉면", "비빔밥"])) {
         parsed.category = "한식";
-      } else if (includesAny(text, ["일식", "초밥", "스시", "라멘", "이자카야", "사시미", "오마카세", "우동", "돈카츠", "카츠"])) {
+      } else if (includesAny(text, ["일식", "초밥", "스시", "라멘", "사시미", "오마카세", "우동", "돈카츠", "카츠"])) {
         parsed.category = "일식";
       } else if (includesAny(text, ["중식", "짜장", "짬뽕", "마라", "훠궈", "양꼬치", "탕수육", "중국집"])) {
         parsed.category = "중식";
@@ -744,8 +772,6 @@ HTML = r"""
         parsed.category = "양식";
       } else if (includesAny(text, ["카페", "디저트", "커피", "케이크", "빙수", "베이커리", "차", "마카롱"])) {
         parsed.category = "카페 디저트";
-      } else if (includesAny(text, ["술집", "주점", "바", "포차", "맥주집", "와인바", "호프", "이자카야"])) {
-        parsed.category = "주점 바";
       }
 
       /* 우선 조건 (#9: 키워드 확장) */
@@ -812,7 +838,7 @@ HTML = r"""
     function renderChips(parsed) {
       const entries = Object.entries(parsed);
       $("parsedChips").innerHTML = entries.length
-        ? entries.map(([key, value]) => `<span class="chip">${key}: ${value}</span>`).join("")
+        ? entries.map(([key, value]) => `<span class="chip">${escapeHtml(key)}: ${escapeHtml(value)}</span>`).join("")
         : `<span class="chip">인식된 조건 없음</span>`;
     }
 

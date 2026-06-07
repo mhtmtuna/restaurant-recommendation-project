@@ -1,0 +1,153 @@
+{
+  "method": "Welch t-test per numeric feature and label with Benjamini-Hochberg FDR correction",
+  "total_restaurants": 630,
+  "summary": [
+    {
+      "feature": "collected_review_count",
+      "feature_std": 15.399815797453652,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.6258528515627574e-60,
+      "max_abs_t_value": 18.84215110804507
+    },
+    {
+      "feature": "taste_confidence",
+      "feature_std": 0.35079785984830586,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.6821878532735551e-49,
+      "max_abs_t_value": 18.17707787271241
+    },
+    {
+      "feature": "rating",
+      "feature_std": 0.9107744512213253,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.5910812987185394e-13,
+      "max_abs_t_value": 8.38925419961108
+    },
+    {
+      "feature": "spaciousness_confidence",
+      "feature_std": 0.08470022250123121,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.4104239533026069e-12,
+      "max_abs_t_value": 7.885640024733595
+    },
+    {
+      "feature": "review_count",
+      "feature_std": 1610.7010102927245,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 6.642037488973697e-11,
+      "max_abs_t_value": 7.207659482555197
+    },
+    {
+      "feature": "value_mentions",
+      "feature_std": 1.7693024816598608,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.8913549929764953e-08,
+      "max_abs_t_value": 6.052745454190944
+    },
+    {
+      "feature": "noise_confidence",
+      "feature_std": 0.07171880227601263,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 4.3410290368536686e-08,
+      "max_abs_t_value": 6.003592174459751
+    },
+    {
+      "feature": "spaciousness_mentions",
+      "feature_std": 1.0738308882883694,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.5886651969618134e-06,
+      "max_abs_t_value": 5.216417569592309
+    },
+    {
+      "feature": "portion_confidence",
+      "feature_std": 0.07281937650383008,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 3.9564391128605155e-06,
+      "max_abs_t_value": 5.0628909094783
+    },
+    {
+      "feature": "noise_mentions",
+      "feature_std": 0.7054024032661974,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 4.325119913222472e-06,
+      "max_abs_t_value": 5.026308711551783
+    },
+    {
+      "feature": "brightness_score",
+      "feature_std": 0.11271824517699001,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 1.835767708146238e-05,
+      "max_abs_t_value": 4.578573015949562
+    },
+    {
+      "feature": "taste_mentions",
+      "feature_std": 3.8616770352159473,
+      "significant_label_count": 5,
+      "min_adjusted_p_value": 0.002801654171295282,
+      "max_abs_t_value": 3.3212040272624503
+    },
+    {
+      "feature": "spaciousness_score",
+      "feature_std": 0.08056182015873715,
+      "significant_label_count": 2,
+      "min_adjusted_p_value": 1.4503232942522088e-05,
+      "max_abs_t_value": 5.080675179798263
+    },
+    {
+      "feature": "value_score",
+      "feature_std": 0.06429492180875948,
+      "significant_label_count": 2,
+      "min_adjusted_p_value": 0.0006630817011163046,
+      "max_abs_t_value": 3.8444872928145
+    },
+    {
+      "feature": "noise_score",
+      "feature_std": 0.08456900149712375,
+      "significant_label_count": 2,
+      "min_adjusted_p_value": 0.015585109346481989,
+      "max_abs_t_value": 2.624393247739417
+    },
+    {
+      "feature": "portion_score",
+      "feature_std": 0.03296161369566565,
+      "significant_label_count": 2,
+      "min_adjusted_p_value": 0.01750773063692662,
+      "max_abs_t_value": 2.5739157221060123
+    },
+    {
+      "feature": "taste_score",
+      "feature_std": 0.05368803535581537,
+      "significant_label_count": 0,
+      "min_adjusted_p_value": 0.0802202791836861,
+      "max_abs_t_value": 1.938483914958193
+    },
+    {
+      "feature": "value_confidence",
+      "feature_std": 0.0881128865089537,
+      "significant_label_count": 0,
+      "min_adjusted_p_value": 0.0808758875031203,
+      "max_abs_t_value": 1.9267611542129455
+    },
+    {
+      "feature": "brightness_confidence",
+      "feature_std": 0.02041388149482247,
+      "significant_label_count": 0,
+      "min_adjusted_p_value": 0.09217837078157354,
+      "max_abs_t_value": 1.8480082707550154
+    },
+    {
+      "feature": "portion_mentions",
+      "feature_std": 0.9410260718402061,
+      "significant_label_count": 0,
+      "min_adjusted_p_value": 0.11410172233581048,
+      "max_abs_t_value": 1.7430340898176437
+    },
+    {
+      "feature": "brightness_mentions",
+      "feature_std": 0.2505149011513929,
+      "significant_label_count": 0,
+      "min_adjusted_p_value": 0.24325576595833867,
+      "max_abs_t_value": 1.2938083906193216
+    }
+  ]
+}

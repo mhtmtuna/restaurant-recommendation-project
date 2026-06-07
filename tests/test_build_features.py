@@ -5,7 +5,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.build_features import count_sentiment, label_value, matches_seat_type
+from src.build_features import (
+    count_sentiment,
+    label_value,
+    matches_seat_type,
+    normalize_rating,
+    normalize_review_count,
+)
 
 
 class BuildFeaturesTest(unittest.TestCase):
@@ -36,6 +42,13 @@ class BuildFeaturesTest(unittest.TestCase):
 
     def test_label_value_ignores_negated_label_keyword(self):
         self.assertEqual(label_value(["데이트 아님"], ["데이트"], ["아님"]), 0)
+
+    def test_normalize_naver_rating(self):
+        self.assertEqual(normalize_rating("별점\r\n4.49"), 4.49)
+        self.assertEqual(normalize_rating("방문자 리뷰 1,068"), "")
+
+    def test_normalize_naver_review_count_recovers_visitor_count(self):
+        self.assertEqual(normalize_review_count("16731900", "방문자 리뷰 1,068"), 1068)
 
 
 if __name__ == "__main__":

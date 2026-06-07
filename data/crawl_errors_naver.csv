@@ -1,0 +1,2 @@
+﻿area,category,restaurant_id,restaurant_name,stage,error
+강남,한식,nv_1242805374,육달집 강남본점,collect,StaleElementReferenceException()
