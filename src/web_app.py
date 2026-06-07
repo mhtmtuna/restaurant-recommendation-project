@@ -94,7 +94,7 @@ def predict_scores_from_model(bundle, features_data):
 
     data = features_data.copy()
     for col in numeric_features:
-        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
+        data[col] = pd.to_numeric(data[col], errors="coerce")
     for col in categorical_features:
         data[col] = data[col].fillna("")
 

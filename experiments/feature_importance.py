@@ -16,7 +16,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from train_model import (
+from model_training_common import (
     CATEGORICAL_FEATURES,
     LABEL_COLUMNS,
     NUMERIC_FEATURES,
@@ -24,6 +24,7 @@ from train_model import (
     make_pipeline,
     read_features,
 )
+from train_model import estimator_factory
 
 OUT_DIR = ROOT / "experiments"
 OUT_PNG = OUT_DIR / "feature_importance.png"
@@ -62,7 +63,7 @@ def main():
     y_data = data[LABEL_COLUMNS].astype(int)
 
     print("fitting final model on all data...")
-    pipe = make_pipeline(seat_columns)
+    pipe = make_pipeline(seat_columns, estimator_factory())
     pipe.fit(x_data, y_data)
 
     feature_names = get_feature_names(pipe, seat_columns)
@@ -130,6 +131,12 @@ def main():
 
     result = {
         "overall_top15": {n: round(v, 6) for n, v in zip(top15_names, top15_vals)},
+        "overall_all": dict(
+            sorted(
+                ((name, round(value, 6)) for name, value in overall_dict.items()),
+                key=lambda item: -item[1],
+            )
+        ),
         "category_contribution_pct": cat_pct,
         "per_label": {
             label: dict(sorted(importances_per_label[label].items(),

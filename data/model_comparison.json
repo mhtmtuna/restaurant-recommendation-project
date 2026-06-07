@@ -5,26 +5,26 @@
     {
       "model_name": "random_forest",
       "report_path": "data\\model_report.json",
-      "r2_score": 0.3099977309943129,
-      "macro_f1": 0.5116095818644858,
-      "micro_f1": 0.7614593077642656,
-      "samples_f1": 0.5617126389460684
+      "r2_score": 0.3716256582215337,
+      "macro_f1": 0.6200818448142966,
+      "micro_f1": 0.6687948922585794,
+      "samples_f1": 0.22574829931972792
     },
     {
       "model_name": "catboost",
       "report_path": "data\\model_report_catboost.json",
-      "r2_score": 0.2612966560003798,
-      "macro_f1": 0.5558900653496034,
-      "micro_f1": 0.7658802177858439,
-      "samples_f1": 0.5696250275500996
+      "r2_score": 0.3362079169778398,
+      "macro_f1": 0.5422163067543057,
+      "micro_f1": 0.599644128113879,
+      "samples_f1": 0.18783824640967497
     },
     {
       "model_name": "adaboost",
       "report_path": "data\\model_report_adaboost.json",
-      "r2_score": -0.2248783116678804,
-      "macro_f1": 0.5244633994923279,
-      "micro_f1": 0.7416137805983681,
-      "samples_f1": 0.5559967729996549
+      "r2_score": -0.12295388002767667,
+      "macro_f1": 0.5891431164675447,
+      "micro_f1": 0.6244579358196011,
+      "samples_f1": 0.20174225245653818
     }
   ]
 }

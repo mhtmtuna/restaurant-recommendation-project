@@ -16,8 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FEATURES_PATH = ROOT / "data" / "restaurants_features.csv"
 
 LABEL_COLUMNS = [
-    "couple_meal",
-    "couple_drink",
+    "couple",
     "friend_meal",
     "friend_drink",
     "business_meal",
@@ -27,8 +26,6 @@ LABEL_COLUMNS = [
 NUMERIC_FEATURES = [
     "rating",
     "review_count",
-    "price",
-    "photo_ratio",
     "collected_review_count",
     "taste_score",
     "taste_confidence",
@@ -61,7 +58,9 @@ logger = logging.getLogger(__name__)
 
 def read_features():
     data = pd.read_csv(FEATURES_PATH)
-    for col in NUMERIC_FEATURES + LABEL_COLUMNS:
+    for col in NUMERIC_FEATURES:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+    for col in LABEL_COLUMNS:
         data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0)
     for col in CATEGORICAL_FEATURES + ["seat_type"]:
         data[col] = data[col].fillna("")
@@ -121,12 +120,9 @@ def multilabel_fold_indices(y_data, n_folds):
         positive_cols = np.flatnonzero(y_values[idx])
 
         def fold_key(fold_idx):
-            label_load = (
-                fold_label_counts[fold_idx, positive_cols].sum()
-                if len(positive_cols)
-                else fold_label_counts[fold_idx].sum()
-            )
-            return (label_load, fold_sizes[fold_idx], fold_idx)
+            if len(positive_cols):
+                return (fold_label_counts[fold_idx, positive_cols].sum(), fold_sizes[fold_idx], fold_idx)
+            return (fold_sizes[fold_idx], fold_idx)
 
         target_fold = min(range(n_folds), key=fold_key)
         folds[target_fold].append(idx)

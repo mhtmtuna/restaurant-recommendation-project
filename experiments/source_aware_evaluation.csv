@@ -1,0 +1,4 @@
+﻿evaluation,train_source,test_source,train_size,test_size,r2_score,macro_f1,micro_f1,samples_f1
+mixed_source_oof_reference,mixed,mixed,630,630,0.3716256582215337,0.6200818448142966,0.6687948922585794,0.22574829931972792
+train_kakao_test_naver,kakao,naver,347,283,-0.37017656823224054,0.0,0.0,0.0
+train_naver_test_kakao,naver,kakao,283,347,-2.953485054045788,0.13688696280245577,0.125,0.021531494442157264

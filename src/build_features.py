@@ -201,6 +201,28 @@ def to_float(value):
         return None
 
 
+def normalize_rating(value):
+    """Extract a numeric rating while ignoring Naver visitor-review labels."""
+    numeric = to_float(value)
+    if numeric is not None and 0 <= numeric <= 5:
+        return numeric
+
+    match = re.search(r"별점\s*([0-5](?:\.\d+)?)", str(value))
+    return float(match.group(1)) if match else ""
+
+
+def normalize_review_count(value, rating_value=""):
+    """Recover review counts from Naver metadata and reject place-id outliers."""
+    visitor_match = re.search(r"방문자\s*리뷰\s*([\d,]+)", str(rating_value))
+    text = visitor_match.group(1) if visitor_match else str(value)
+    digits = re.sub(r"[^\d]", "", text)
+    if not digits:
+        return ""
+
+    count = int(digits)
+    return count if count <= 100_000 else ""
+
+
 def apply_bayesian_shrinkage(rows):
     """Apply Bayesian shrinkage to all score columns.
 
@@ -281,8 +303,8 @@ def build_features(raw_rows, keywords):
             "area": first["area"],
             "category": first["category"],
             "price": first["price"],
-            "rating": first["rating"],
-            "review_count": first["review_count"],
+            "rating": normalize_rating(first["rating"]),
+            "review_count": normalize_review_count(first["review_count"], first["rating"]),
             "photo_ratio": first["photo_ratio"],
             "collected_review_count": len(reviews),
         }

@@ -5,4 +5,9 @@ venv/
 data/raw_reviews.csv
 data/crawl_errors.csv
 data/crawl_status.csv
+data/raw_reviews_naver.csv
+data/crawl_errors_naver.csv
+data/crawl_status_naver.csv
 models/
+.agents/
+AGENTS.md
